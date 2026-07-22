@@ -1,0 +1,20 @@
+{
+  "project_name": "vmctl",
+  "project_tagline": "A CLI for streaming and searching ForgeRock logs across identical SSH-reachable deployments, when you don't have ELK",
+  "primary_language": "python",
+  "package_manager": "uv",
+  "today": "2026-07-22",
+  "languages": ["python"],
+  "lint": {"python": "ruff"},
+  "test": {"python": "pytest"},
+  "typecheck": {"python": "pyright"},
+  "architecture_sketch": "A CLI for managing local VMs, but the current focus is a single capability: streaming and searching VM logs at a particular log path or log file, across the hosts of one deployment. Example: a ForgeRock IG deployed identically on 4 servers behind a load balancer. Each host has its own system logfile plus per-route logfiles, so debugging means logs scattered across servers. The standard answer is Filebeat on each host shipping into Elastic, but when that isn't available and all you have is SSH connectivity, you still want to search and stream with a standard format. It should be a command-line tool, easy for both humans and AI agents to use.\n\nHosts come from a YAML config and are wrapped into profiles -- e.g. TEST_IG: with IG1 (hostname, username, password), IG2, ... -- with room for whatever other metadata is needed later. Remote access is over SSH with username/password; the password may change, and password management is the user's responsibility. The transport choice (shelling out to the ssh binary vs. a library like asyncssh/paramiko) is not settled yet. Remote servers are a standard RHEL environment with basic commands like tail available, but there is no ability to install additional tools on them, so the remote side must work with what is already there.\n\nOutput is JSON. The tool can standardize some things, but it is not targeting arbitrary input -- it focuses on ForgeRock product logs, which are already pretty much standard JSON, and adds metadata on top to better label the source. Streaming targets the terminal and a local logfile. Search output should also be JSON, but the query interface is not decided yet and should reference existing search query tools.",
+  "constraints": "No remote installation -- only base RHEL tools (tail, grep, sed, awk) may be used on the far end. No agent, no Filebeat, nothing shipped to the remote hosts. Must be deployable without uv: uv is a development-time tool only, and the project must install into a plain venv via pip. Not a general-purpose log parser -- scoped to ForgeRock product logs, which are already JSON; vmctl adds a source-labelling envelope rather than parsing arbitrary formats. Password management is out of scope -- the user supplies and rotates credentials; vmctl does not own a secret store. Explicitly not a replacement for ELK -- this is the fallback for when SSH is all you have.",
+  "frontend": false,
+  "enabled_plugins": {
+    "context7@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "claude-devkit@claude-devkit-marketplace": true
+  },
+  "plugins_missing_install": []
+}

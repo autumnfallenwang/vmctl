@@ -1,0 +1,51 @@
+{
+  "_doc": "Per-project Claude Code settings. Four hooks ship by default: secret-blocking (Bash + Edit/Write paths), the devkit-task plan-mode override, and auto-format-after-write. The hook scripts live under .claude/hooks/ and run via `bash $CLAUDE_PROJECT_DIR/.claude/hooks/<name>.sh`. enabledPlugins is seeded by /devkit-init from the chosen languages + frontend inference.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/devkit-task-plan-mode.sh\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-env-edits.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-secrets.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/format-after-write.sh\""
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "claude-devkit@claude-devkit-marketplace": true
+  }
+}
