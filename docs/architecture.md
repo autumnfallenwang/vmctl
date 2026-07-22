@@ -35,11 +35,21 @@ Single Python package. No code exists yet — these are the responsibilities the
 - **Not a replacement for ELK.** Filebeat into Elastic remains the right answer when it's available; vmctl is the fallback for when SSH is all you have.
 - **Scope is currently narrow.** vmctl is framed as a CLI for managing local VMs, but only the log streaming/search capability is in scope for now.
 
+## Test / development environment
+
+Because vmctl's whole job is multi-host log fanout, it is developed against a purpose-built two-host lab rather than the product code alone. The decisions are recorded in [ADR 0002](adr/0002-dev-test-infra.md); execution lives in [milestone 01](milestones/01-test-infra-and-framework.md).
+
+- **Two Rocky 9 (RHEL-compatible) VMs**, one **PingGateway IG 2024.11.1** each, no AM/DS. Rocky 9 keeps the env faithful to vmctl's stock-RHEL / base-tools constraint; two hosts is the minimum that exercises fanout, cross-host merge, per-host labelling, and dedup (scaling to 4 is just config).
+- Each IG runs a minimal `ReverseProxyHandler` route to a per-host stub upstream with **JSON logging enabled** — real ForgeRock-format logs without an AM dependency.
+- **No load balancer.** vmctl connects to each host directly over SSH and never through an LB; the LB in production only spreads traffic. A **test engine** stands in for that — a **replay** mode (append a captured golden corpus with fresh timestamps/tx-ids and per-host variation; deterministic, the default) plus an opt-in **live** mode (drive real IG requests). It manufactures the cases vmctl must survive: a tx-id on both hosts, host-only events, clock skew, bursts, broken JSON lines.
+- Test hosts permit **password SSH** so vmctl's real username/password auth path is exercised.
+- **Repo layout:** single repo, `src`-layout. Product in `src/vmctl/` (the sole packaged unit); `tests/` and `testenv/{infra,engine,corpus}/` sit outside `src/` and are excluded from the wheel by the packaging boundary. The test engine and all of `testenv/` are dev-only and never shipped.
+
 ## Open questions
 
 - **SSH transport.** Shell out to the system `ssh` binary (inherits the user's config, jump hosts, known_hosts) or use a library such as `asyncssh` / `paramiko`? Password auth pushes against the plain-binary option; not decided.
 - **Where filtering happens.** Run `grep`/`tail` filters on the remote side to cut bytes over the wire, or ship lines back and filter locally for consistency? Likely a split, but the line isn't drawn.
 - **Search query interface.** Search output should be JSON, but the query syntax is undecided — the intent is to reference existing search query tools rather than invent one.
-- **Host-count scale.** No target given for how many hosts a profile is expected to fan out to (the motivating case is 4).
-- **Python version floor.** Not specified. Worth pinning early, since deployment targets are RHEL.
-- **Module breakdown.** The internal layout of the package hasn't been settled; see Key components for the responsibilities it needs to cover.
+- **Host-count scale.** Test env is fixed at 2 (see above); production target is ~4 behind an LB. The profile format must not assume a specific count.
+- **Python version floor — resolved: 3.12.** Governs the machine vmctl *runs on* (operator/agent/jump host), not the log hosts, which never execute vmctl's Python. RHEL 9 deployment uses the `python3.12` appstream module. To be pinned as `requires-python = ">=3.12"` in [milestone 01](milestones/01-test-infra-and-framework.md).
+- **Module breakdown.** The internal layout of `src/vmctl/` is deferred to the first product milestone (M03), once the test harness exists to build against.
