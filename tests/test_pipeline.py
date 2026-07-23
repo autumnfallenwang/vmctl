@@ -50,6 +50,10 @@ def test_audit_shape() -> None:
     assert e["@timestamp"].startswith("2026-07-23T00:04")  # parsed from the json timestamp field
     assert e["labels"]["route_id"] == "00-proxy"  # mirrored from ig.routeId
     assert "transactionId" in e  # merged json field
+    # Parsed record: the raw line lives in event.original, and there is no `message`
+    # duplicating it (ADR 0004 amendment).
+    assert e["event"]["original"].startswith("{")
+    assert "message" not in e
 
 
 def test_route_capture_shape() -> None:
@@ -62,6 +66,7 @@ def test_route_capture_shape() -> None:
     assert e["@timestamp"].startswith("2026-07-23T")  # parsed from the leading text timestamp
     assert e["labels"]["route_id"] == "00-proxy"  # from the filename grok
     assert "GET http://127.0.0.1:9080/" in e["message"]  # multiline event kept whole
+    assert "original" not in e["event"]  # text record: message is the raw line
 
 
 def test_system_shape_has_no_route() -> None:
@@ -80,6 +85,10 @@ def test_broken_json_is_graceful() -> None:
     assert len(events) == 3
     assert events[0]["labels"]["route_id"] == "good"  # first line parsed + merged
     assert events[2]["labels"]["route_id"] == "fine"  # third line parsed + merged
-    # the middle line was not valid JSON — no merge, but no crash and message preserved
+    # the middle line was not valid JSON — no merge, but no crash and the raw preserved
     assert "route_id" not in events[1]["labels"]
     assert events[1]["message"].startswith('{"_id":"b"')
+    # ...and it is *tagged* as a failure, so a bad line is visible rather than merely
+    # field-less (Logstash's json-codec behaviour).
+    assert events[1]["tags"] == ["_jsonparsefailure"]
+    assert "tags" not in events[0]  # a good line carries no failure tag

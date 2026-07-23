@@ -56,6 +56,8 @@ def matches_condition(condition: str | None, event: dict[str, Any]) -> bool:
 def apply_filters(event: dict[str, Any], filters: list[Filter], *, path: str) -> None:
     """Run each matching filter's grok against the file `path` / `message`, writing
     the captured named groups into ``event['labels']``."""
+    # A grok on `message` applies to unparsed records only — a parsed one has no
+    # `message`, exactly as in Logstash, and its content is already in merged fields.
     sources = {"path": path, "message": event.get("message", "")}
     labels = event.setdefault("labels", {})
     for filt in filters:
