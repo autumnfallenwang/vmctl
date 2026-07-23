@@ -1,0 +1,5 @@
+2026-07-23T00:04:38,888Z | INFO  | Thread-2 | o.f.o.l.Launcher | @system | Cleaning up resources
+2026-07-23T00:04:38,914Z | INFO  | Thread-2 | o.f.o.h.r.RouterHandler | @system | Unloaded the route with id '00-proxy'
+2026-07-23T00:04:38,940Z | INFO  | Thread-2 | o.f.o.l.Launcher | @system | ForgeRock Identity Gateway has been stopped
+2026-07-23T00:04:39,785Z | INFO  | main | o.f.o.l.Launcher | @system | Reading the configuration from /opt/ig-instance/config/admin.json
+2026-07-23T00:04:39,982Z | INFO  | main | o.f.o.l.Launcher | @system | Identity Gateway 2024.11.1 (branch sustaining/2024.11.x, revision cb27b07711f5988169f2b23a71370cad57e198a7)

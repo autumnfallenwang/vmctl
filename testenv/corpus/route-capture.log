@@ -1,0 +1,20 @@
+2026-07-23T00:04:42,571Z | INFO  | vert.x-eventloop-thread-2 | o.f.o.d.c.C.c.ReverseProxyHandler | @00-proxy | 
+
+[CONTINUED]--- (request) exchangeId:e2477367-c95d-43de-8071-0bc48abc3663-4 - transactionId:e2477367-c95d-43de-8071-0bc48abc3663-5 --->
+
+[CONTINUED]GET http://127.0.0.1:9080/ HTTP/1.1
+[CONTINUED]Accept: */*
+[CONTINUED]Host: 127.0.0.1:9080
+[CONTINUED]User-Agent: curl/7.76.1
+
+
+2026-07-23T00:04:42,668Z | INFO  | vert.x-eventloop-thread-2 | o.f.o.d.c.C.c.ReverseProxyHandler | @00-proxy | 
+
+[CONTINUED]<--- (response) exchangeId:e2477367-c95d-43de-8071-0bc48abc3663-4 - transactionId:e2477367-c95d-43de-8071-0bc48abc3663-5 ---
+
+[CONTINUED]HTTP/1.1 200 OK
+[CONTINUED]Content-Length: 60
+[CONTINUED]Content-Type: application/json
+[CONTINUED]Date: Thu, 23 Jul 2026 00:04:42 GMT
+[CONTINUED]Server: BaseHTTP/0.6 Python/3.9.18
+

@@ -51,6 +51,7 @@ profiles:
         codec: json
 
     filters:
-      # routeId for route logs is captured from the file path (audit already has ig.routeId).
+      # route_id for route logs is captured from the file path into labels.route_id
+      # (audit already carries ig.routeId, which vmctl mirrors to labels.route_id).
       - if: '[type] == "ig-route"'
-        grok: { path: 'route-%{DATA:routeId}\.log' }
+        grok: { path: 'route-%{DATA:route_id}\.log' }
