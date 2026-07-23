@@ -29,7 +29,7 @@ and the dependency order.
 | [M06](06-packaging-and-deploy.md) | Packaging & deploy | Wheel, pip/venv on RHEL-like, 0.1.0 | 0001 | planned |
 | [M07](07-resumable-offset-registry.md) | Offset registry | Resumable exactly-once (optional) | 0005 | planned (stretch) |
 | [M08](08-dsl-query-interface.md) | Machine-only interface | Query DSL in, NDJSON out | 0007 | ✅ done |
-| [M09](09-field-discovery.md) | Field discovery | `vmctl fields` — what is queryable | 0008 | planned |
+| [M09](09-field-discovery.md) | Field discovery | `vmctl fields` — what is queryable | 0008 | ✅ done |
 
 M08 ran ahead of M06/M07 (both unstarted), and M09 follows it; they keep the existing
 numbering so committed cross-references stay valid.

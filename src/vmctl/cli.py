@@ -1,7 +1,8 @@
 """Command-line entry point for vmctl.
 
-Three subcommands: `discover` (list the files each input matches on each host),
-`tail` (follow them live) and `search` (bounded read + Query DSL filter).
+Four subcommands: `discover` (list the files each input matches on each host),
+`tail` (follow them live), `search` (bounded read + Query DSL filter), and `fields`
+(what is queryable, in Elasticsearch `_field_caps` shape).
 
 vmctl is a machine interface (docs/adr/0007): every command emits **NDJSON only**, one
 JSON object per line, and `search` takes its filter as **Elasticsearch Query DSL** — the
@@ -20,10 +21,21 @@ from vmctl.config import ConfigError, Profile, load_config
 from vmctl.credentials import CredentialsError, resolve_password
 from vmctl.discovery import DiscoveryError, discover
 from vmctl.dsl import DSLError, parse_dsl
+from vmctl.fields import run_fields
 from vmctl.output import to_ndjson
 from vmctl.search import run_search
 from vmctl.tail import run_tail
 from vmctl.transport import AsyncSSHTransport
+
+
+_EPILOG = (
+    "Output: every command emits NDJSON (one JSON object per line) on stdout; there is no "
+    "human-readable mode. Pipe through `jq` to read it by eye.\n"
+    "Query: `search` takes an Elasticsearch Query DSL filter; run `fields` first to discover "
+    "what you can filter on.\n"
+    "Password: each host may carry an inline `password:` in the config; otherwise vmctl reads "
+    "$VMCTL_SSH_PASSWORD, then falls back to an interactive prompt."
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,13 +44,15 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Stream and search ForgeRock logs across identical SSH-reachable deployments."
         ),
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"vmctl {__version__}")
 
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     discover_p = sub.add_parser(
-        "discover", help="list the log files each rule matches on each host"
+        "discover", help="list the log files each input matches on each host"
     )
     discover_p.add_argument("profile", help="profile name from the config")
     discover_p.add_argument("--config", default=None, help="path to the profile config (YAML)")
@@ -73,6 +87,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="read whole files and filter locally (baseline for verifying pushdown)",
     )
     search_p.set_defaults(func=cmd_search)
+
+    fields_p = sub.add_parser(
+        "fields", help="report what is queryable, in Elasticsearch _field_caps shape"
+    )
+    fields_p.add_argument("profile", help="profile name from the config")
+    fields_p.add_argument("--config", default=None, help="path to the profile config (YAML)")
+    fields_p.add_argument("--type", default=None, help="only sample this input type")
+    fields_p.add_argument(
+        "--sample", type=int, default=500, help="records to sample per input (default 500)"
+    )
+    fields_p.set_defaults(func=cmd_fields)
 
     return parser
 
@@ -235,3 +260,30 @@ def cmd_search(args: argparse.Namespace) -> int:
     finally:
         if args.file:
             out.close()
+
+
+def cmd_fields(args: argparse.Namespace) -> int:
+    profile = _load_profile(args)
+    if profile is None:
+        return 1
+    fallback, ok = _fallback_password(profile)
+    if not ok:
+        return 1
+
+    def write(result: dict[str, object]) -> None:
+        print(to_ndjson(result), flush=True)
+
+    try:
+        return asyncio.run(
+            run_fields(
+                AsyncSSHTransport(),
+                profile,
+                fallback_password=fallback,
+                type_filter=args.type,
+                sample=args.sample,
+                write=write,
+                report_error=lambda msg: print(msg, file=sys.stderr),
+            )
+        )
+    except KeyboardInterrupt:
+        return 0

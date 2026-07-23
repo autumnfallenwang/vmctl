@@ -1,8 +1,8 @@
 ---
 milestone: 9
 title: field discovery (vmctl fields)
-status: planned
-started: TBD
+status: done
+started: 2026-07-23
 ---
 
 # M09 — field discovery (`vmctl fields`)
@@ -78,4 +78,33 @@ discover the schema cannot use the tool.
 
 ## Progress
 
-- (not started)
+- 2026-07-23: Shipped — `vmctl fields` (`fields.py` + CLI). `FieldCatalog` (pure, ingests
+  events → `_field_caps`-shaped dict) plus `run_fields`, which mirrors `search`'s host/glob
+  pipeline but reads `tail -n {sample}` and accumulates instead of matching. `leaves()`
+  flattens arrays to the queryable path (no `.0`); `type_family()` infers ES families
+  (`keyword`/`date`/`long`/`double`/`boolean`), strings→keyword. `indices` omitted on
+  agreement, present on conflict. 16 new tests (164 fast) + 2 live. **Verified live**:
+  3 datasets, both hosts, 1193 records, 32 fields; round-trip discover→search returns hits.
+  The live run surfaced the conflict model working for real — `message` reports both `date`
+  (route/system lines lead with an ISO timestamp) and `keyword` (route `[CONTINUED]` lines),
+  each with its datasets. All exit criteria met.
+
+## Outcome
+
+Shipped `vmctl fields` — the tool is now self-describing. An agent pointed at an unfamiliar
+deployment can discover the schema (`fields`) and then query it (`search`), with no prior
+knowledge of the log and no external documentation. Output is Elasticsearch's `_field_caps`
+response shape — parseable by anything that already understands it — via a pure `FieldCatalog`
+accumulator fed by `run_fields`, which reuses `search`'s host/glob/frame/assemble pipeline and
+swaps the match step for field accumulation. The three tiers and the search path are untouched.
+
+Faithful to ADR 0008's *shape-compatible, not guarantee-compatible* framing: the report is
+inferred from a sample, so `vmctl.docs_sampled` / `coverage` hedge what a real mapping would not
+need to. The `_field_caps` conflict model earned its keep on live data — `message` is reported
+as both `date` and `keyword` across the route/system logs, honestly, rather than being forced to
+one type.
+
+No deviations from the plan. Known wart, deliberately left: `_remote_path` is now duplicated a
+third time (tail/search/fields) — extracting it is a boundary move for a separate cycle.
+
+Closed: 2026-07-23

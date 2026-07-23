@@ -110,3 +110,21 @@ def test_search_rejects_both_filter_sources(
     ]
     assert main(args) == 1
     assert "not both" in capsys.readouterr().err
+
+
+def test_fields_requires_profile() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["fields"])
+    assert exc.value.code == 2
+
+
+def test_fields_bad_config_path_returns_1(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["fields", "test_ig", "--config", "/no/such/file.yml"]) == 1
+    assert "config error" in capsys.readouterr().err
+
+
+def test_fields_sample_flag_parses() -> None:
+    from vmctl.cli import build_parser
+
+    args = build_parser().parse_args(["fields", "p", "--sample", "42", "--type", "ig-audit"])
+    assert args.sample == 42 and args.type == "ig-audit"
