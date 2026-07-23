@@ -1,0 +1,22 @@
+# Convenience SSH config for human key-based access to the test IG hosts.
+# Use from this directory:  ssh -F ssh_config ig1
+#
+# This uses the Vagrant per-machine key (key auth). vmctl itself uses PASSWORD
+# auth as the vmctl user (see inventory.yml + creds.env) — that path is separate.
+# IdentityFile paths are relative to this directory, so run ssh from testenv/infra/.
+
+Host ig1
+  HostName 192.168.77.11
+  User vagrant
+  IdentityFile .vagrant/machines/ig1/libvirt/private_key
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  LogLevel ERROR
+
+Host ig2
+  HostName 192.168.77.12
+  User vagrant
+  IdentityFile .vagrant/machines/ig2/libvirt/private_key
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  LogLevel ERROR

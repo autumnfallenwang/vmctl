@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  vmctl test-env logging config for PingGateway IG.
+
+  Based on IG's bundled default (openig-standalone .../logback.xml). Governs the
+  SYSTEM/debug logs only — the JSON *audit* access log is configured separately
+  in the route's AuditService (config/routes/00-proxy.json).
+
+  The SiftingAppender splits by the `routeId` MDC key: system events go to
+  route-system.log, and each route's own events go to route-<routeId>.log
+  (populated when a route captures request/response — see the route's "capture").
+
+  Rotation is tuned smaller than IG's 100MB/30d/3GB default for a test box.
+-->
+<configuration>
+
+  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator" />
+
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%nopex[%thread] %-5level %logger{35} @%mdc{routeId:-system} - %message%n</pattern>
+    </encoder>
+  </appender>
+
+  <appender name="SIFT" class="ch.qos.logback.classic.sift.SiftingAppender">
+    <discriminator>
+      <key>routeId</key>
+      <defaultValue>system</defaultValue>
+    </discriminator>
+    <sift>
+      <!-- One rolling log file per route: route-<routeId>.log -->
+      <appender name="FILE-${routeId}" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${instance.dir}/logs/route-${routeId}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+          <fileNamePattern>${instance.dir}/logs/route-${routeId}-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+          <maxFileSize>10MB</maxFileSize>
+          <maxHistory>7</maxHistory>
+          <totalSizeCap>200MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+          <pattern>%nopex%date{"yyyy-MM-dd'T'HH:mm:ss,SSSXXX", UTC} | %-5level | %thread | %logger{20} | @%mdc{routeId:-system} | %replace(%message%n%xException){'([\r\n])(.)', '$1[CONTINUED]$2'}</pattern>
+        </encoder>
+      </appender>
+    </sift>
+  </appender>
+
+  <!-- Capture logs request/response at route context; needs DEBUG to be emitted. -->
+  <logger name="org.forgerock.openig.decoration.capture.CaptureDecorator" level="DEBUG" />
+
+  <root level="${ROOT_LOG_LEVEL:-INFO}">
+    <appender-ref ref="SIFT" />
+    <appender-ref ref="STDOUT" />
+  </root>
+</configuration>

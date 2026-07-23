@@ -8,7 +8,7 @@ Run the typecheck command for vmctl. Validates the codebase's static type contra
 
 ## Commands
 
-- **python (pyright)**: `pyright`
+- **python (pyright)**: `uv run pyright`
 
 ## Reporting
 

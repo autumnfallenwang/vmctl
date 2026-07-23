@@ -1,0 +1,17 @@
+[Unit]
+Description=PingGateway IG 2024.11.1
+After=network.target stub-app.service
+Wants=stub-app.service
+
+[Service]
+Type=simple
+User=vmctl
+# JAVA_HOME, IG_INSTANCE_DIR, JAVA_OPTS and the start script path are written by
+# install-ig.sh (JDK path varies), so the unit stays host-agnostic.
+EnvironmentFile=/etc/sysconfig/pinggateway
+ExecStart=/bin/sh -c '"$IG_START" "$IG_INSTANCE_DIR"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

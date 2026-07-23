@@ -1,0 +1,4 @@
+{
+  "mode": "PRODUCTION",
+  "connectors": [ { "port": 9080 } ]
+}

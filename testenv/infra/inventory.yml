@@ -1,0 +1,21 @@
+# vmctl test-environment host inventory (M01-B).
+#
+# Two identical Rocky 9 hosts, each will run one PingGateway IG, provisioned by
+# the Vagrantfile in this directory. vmctl connects to each host directly over
+# SSH — there is no load balancer.
+#
+# Passwords are NOT stored here — they live in testenv/infra/creds.env (gitignored).
+# This is a stub that will grow into vmctl's own YAML profile format in M03.
+
+profile: TEST_IG
+hosts:
+  ig1:
+    hostname: 192.168.77.11
+    ssh_user: vmctl        # password auth (vmctl's path) — password in creds.env
+    vagrant_user: vagrant  # key auth for humans — `vagrant ssh ig1`
+    ig_port: 9080          # reserved for the IG listener (installed in track C)
+  ig2:
+    hostname: 192.168.77.12
+    ssh_user: vmctl
+    vagrant_user: vagrant
+    ig_port: 9080

@@ -1,0 +1,36 @@
+{
+  "name": "proxy",
+  "condition": "${true}",
+  "baseURI": "http://127.0.0.1:8081",
+  "auditService": "AuditService-1",
+  "capture": "all",
+  "heap": [
+    {
+      "name": "AuditService-1",
+      "type": "AuditService",
+      "config": {
+        "config": {},
+        "eventHandlers": [
+          {
+            "class": "org.forgerock.audit.handlers.json.JsonAuditEventHandler",
+            "config": {
+              "name": "json",
+              "logDirectory": "&{ig.instance.dir}/logs/audit",
+              "topics": [ "access" ],
+              "rotationRetentionCheckInterval": "5 seconds",
+              "fileRotation": {
+                "rotationEnabled": true,
+                "maxFileSize": 10485760
+              },
+              "fileRetention": {
+                "maxNumberOfHistoryFiles": 7,
+                "maxDiskSpaceToUse": 209715200
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "handler": "ReverseProxyHandler"
+}

@@ -1,0 +1,66 @@
+# Vagrantfile — two identical Rocky 9 hosts for the vmctl test environment.
+#
+# Each host will run one PingGateway IG (installed in a later track); for now
+# this just stands up two reachable Rocky 9 VMs on a stable private network.
+#
+# Provisioning method chosen in docs/adr/0002-dev-test-infra.md (Vagrant + libvirt,
+# using the local generic/rocky9 box). Plan/exit-criteria: docs/milestones/01-*.
+#
+# Bring up:
+#   set -a; source creds.env; set +a      # load VMCTL_SSH_USER / VMCTL_SSH_PASSWORD
+#   vagrant up
+#
+# vmctl reaches each host DIRECTLY over SSH (never through a load balancer), so
+# the two nodes are deliberately independent — no LB, no shared config.
+
+# name => static IP on the private network (host-reachable, stable for the inventory)
+NODES = {
+  "ig1" => "192.168.77.11",
+  "ig2" => "192.168.77.12",
+}
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/rocky9"
+  # vmctl tests password auth; the Vagrant insecure key stays for `vagrant ssh`.
+  config.ssh.insert_key = false
+
+  NODES.each do |name, ip|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+
+      node.vm.network :private_network,
+        ip: ip,
+        libvirt__network_name: "vmctl-ig-net",
+        libvirt__forward_mode: "nat"
+
+      node.vm.provider :libvirt do |lv|
+        lv.default_prefix = "vmctl"   # domains become vmctl_ig1 / vmctl_ig2
+        lv.memory = 2048
+        lv.cpus = 2
+      end
+
+      # Create the vmctl test login + enable password SSH (vmctl's real auth path).
+      node.vm.provision "shell",
+        path: "provision/enable-password-ssh.sh",
+        env: {
+          "VMCTL_SSH_USER"     => ENV.fetch("VMCTL_SSH_USER", "vmctl"),
+          "VMCTL_SSH_PASSWORD" => ENV.fetch("VMCTL_SSH_PASSWORD", "changeme"),
+        }
+
+      # /vagrant is not synced on these guests, so push assets over SSH.
+      # Clean the target first — the file provisioner nests the upload
+      # (/tmp/vmctl-ig/ig) if the destination already exists from a prior run.
+      node.vm.provision "shell", name: "clean-upload",
+        inline: "rm -rf /tmp/vmctl-ig", run: "always"
+      node.vm.provision "file", source: "ig", destination: "/tmp/vmctl-ig"
+      node.vm.provision "file",
+        source: "artifacts/PingGateway-2024.11.1.zip",
+        destination: "/tmp/pinggateway.zip"
+
+      # Install JDK 17 + IG, lay down config, run under systemd.
+      node.vm.provision "shell",
+        path: "provision/install-ig.sh",
+        env: { "VMCTL_SSH_USER" => ENV.fetch("VMCTL_SSH_USER", "vmctl") }
+    end
+  end
+end

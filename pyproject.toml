@@ -1,0 +1,40 @@
+[project]
+name = "vmctl"
+dynamic = ["version"]
+description = "A CLI for streaming and searching ForgeRock logs across identical SSH-reachable deployments, when you don't have ELK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+vmctl = "vmctl.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/vmctl/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vmctl"]
+
+[dependency-groups]
+dev = ["ruff", "pyright", "pytest"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: test needs live VMs or network (excluded from the fast loop)",
+]

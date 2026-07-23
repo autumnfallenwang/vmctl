@@ -1,7 +1,7 @@
 ---
 milestone: 1
 title: Dev/test infrastructure + empty project framework
-status: active
+status: done
 started: 2026-07-22
 ---
 
@@ -50,11 +50,11 @@ Stand up the two-host Rocky 9 IG test environment and the empty `src`-layout pro
 
 ## Exit criteria
 
-- [ ] Empty vmctl framework is pip-installable into a plain venv; `vmctl --version` runs; smoke test + ruff + pyright are green.
-- [ ] Two Rocky 9 VMs (`ig1`, `ig2`) provisioned and SSH-reachable via **both key and password**; inventory documented.
-- [ ] PingGateway IG 2024.11.1 running on each host with a JSON-logging route and a stub upstream; clean snapshots taken.
-- [ ] The traffic driver produces divergent JSON logs on the two hosts, confirmed by tailing both.
-- [ ] `requires-python = ">=3.12"` pinned in `pyproject.toml`.
+- [x] Empty vmctl framework is pip-installable into a plain venv; `vmctl --version` runs; smoke test + ruff + pyright are green.
+- [x] Two Rocky 9 VMs (`ig1`, `ig2`) provisioned and SSH-reachable via **both key and password**; inventory documented.
+- [x] PingGateway IG 2024.11.1 running on each host with a JSON-logging route and a stub upstream; clean snapshots taken.
+- [x] The traffic driver produces divergent JSON logs on the two hosts, confirmed by tailing both.
+- [x] `requires-python = ">=3.12"` pinned in `pyproject.toml`.
 
 ## Non-goals (this milestone)
 
@@ -74,3 +74,16 @@ Created as their own files when the prior milestone closes — kept here as a on
 ## Progress
 
 - 2026-07-22: Milestone opened; infra decisions recorded in ADR 0002.
+- 2026-07-22: Track A shipped — empty `src`-layout framework (`pyproject.toml`, `src/vmctl/{__init__,cli}.py`, smoke tests, `testenv/` tree). Check loop green (ruff/pyright/pytest); pip/venv install of the built wheel runs `vmctl 0.0.1` with no uv. Devkit verify skills switched to `uv run`.
+- 2026-07-22: Track B shipped — `ig1`/`ig2` Rocky 9 VMs via Vagrant + libvirt (`testenv/infra/`, static IPs 192.168.77.11/.12). Both reachable by key (vagrant) and password (vmctl user); inventory + ssh_config recorded. Provisioning method amended in ADR 0002 (Vagrant over cloud-init, since the host already had it).
+- 2026-07-22: Track C shipped — PingGateway IG 2024.11.1 on both hosts (JDK 17, systemd), one no-AM reverse-proxy route to a local stub, **JSON audit logging** at `logs/audit/access.audit.json` (ForgeRock Common Audit — `transactionId`, `http.request`, `response`, `ig.routeName`). Host→IG→stub verified end-to-end on both; firewalld 9080 opened; clean `ig-baseline` snapshots taken. Config in `testenv/infra/ig/`; IG binary stays gitignored in `artifacts/`.
+- 2026-07-22: Track D shipped — `testenv/engine/drive.py`, a stdlib round-robin traffic driver. 40 reqs across both IGs grew each host's audit log 2→22 with divergent paths + per-host transactionId prefixes. **All M01 exit criteria met.** (Finding for M02: IG's default access audit doesn't log arbitrary request headers — use `transactionId`/`X-ForgeRock-TransactionId` for cross-host correlation.)
+- 2026-07-22: Logging refined on both hosts — explicit `config/logback.xml` (per-route SiftingAppender → `route-<routeId>.log`, tuned rotation) + `"capture": "all"` on the route (populates `route-00-proxy.log`) + audit `fileRotation`/`fileRetention`. Three log shapes now present: `route-system.log`, `route-<routeId>.log` (both text), `audit/access.audit.json` (JSON). Config split confirmed: logback.xml = global system/route-debug + rotation; AuditService (route) = access JSON + its rotation. Snapshots refreshed.
+
+## Outcome
+
+Shipped the full test scaffold: the pip-installable `src`-layout vmctl framework (no-uv deploy proven) plus a two-host Rocky 9 lab (`ig1`/`ig2`) running PingGateway IG 2024.11.1, each producing real ForgeRock logs in three shapes — `route-system.log`, per-route `route-<id>.log`, and JSON `access.audit.json` — with rotation, driven by a stdlib traffic engine. All five exit criteria met.
+
+Deviations from plan: provisioning switched from cloud-init to **Vagrant + libvirt** (ADR 0002 amended) because the host already had the tooling and the `generic/rocky9` box; the log-format details normally deferred to M02 were partly front-loaded here at the user's request. Lessons captured in [[ig-test-environment]] and [[ig-config-gotchas]].
+
+Closed: 2026-07-22

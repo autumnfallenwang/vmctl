@@ -1,0 +1,12 @@
+[Unit]
+Description=vmctl stub upstream (:8081) — the app IG reverse-proxies to
+After=network.target
+
+[Service]
+Type=simple
+User=vmctl
+ExecStart=/usr/bin/python3 /opt/stub/stub-app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

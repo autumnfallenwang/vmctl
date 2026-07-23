@@ -9,8 +9,8 @@ Run the test suite for vmctl. If `$ARGUMENTS` contains the word `fast`, run the 
 ## Commands
 
 - **python (pytest)**
-  - run: `pytest`
-  - fast: `pytest -m 'not integration'`
+  - run: `uv run pytest`
+  - fast: `uv run pytest -m 'not integration'`
 
 ## Reporting
 

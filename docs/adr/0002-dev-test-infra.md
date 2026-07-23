@@ -55,3 +55,5 @@ Build a purpose-made two-host test environment and lay the empty project framewo
 - Builds on [0001](./0001-initial-stack.md) (initial stack). The test engine and all of `testenv/` are **dev-only and never shipped** in the wheel.
 - Source labs referenced: `PAIC/SSO_SLO_TEST/POC_070726/test-infra` and `learnAndCert/AI Learning/ping-agent-lab`.
 - Execution plan and exit criteria live in [`docs/milestones/01-test-infra-and-framework.md`](../milestones/01-test-infra-and-framework.md).
+
+**2026-07-22 — provisioning method (amends decision point 6).** The dev host already has Vagrant 2.4.9 + vagrant-libvirt and the `generic/rocky9` box downloaded locally (it's the same pattern the machine's existing `infra_*` domains use). So track B provisions the two IG hosts with **Vagrant + libvirt** (`testenv/infra/Vagrantfile`) rather than the hand-rolled cloud-init / `vol-create-as` recipe originally noted — declarative, reproducible, and no image download. Everything else in this ADR stands: Rocky 9, two independent IG hosts, password SSH enabled for vmctl's auth path, no LB.

@@ -9,8 +9,8 @@ Run the lint command for vmctl. If `$ARGUMENTS` contains the word `fix`, run the
 ## Commands
 
 - **python (ruff)**
-  - check: `ruff check .`
-  - fix: `ruff check --fix .`
+  - check: `uv run ruff check .`
+  - fix: `uv run ruff check --fix .`
 
 ## Reporting
 

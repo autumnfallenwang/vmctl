@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.uv/
+
+# uv-managed local Python (if pinned)
+.python-version
+
+# testenv secrets + Vagrant state (never commit test credentials)
+testenv/infra/creds.env
+testenv/**/.vagrant/
+
+# Licensed binaries — the IG zip is fetched locally, never committed
+testenv/infra/artifacts/
