@@ -33,3 +33,14 @@ def test_discover_unknown_profile_returns_1(
     )
     assert main(["discover", "zzz", "--config", str(cfg)]) == 1
     assert "unknown profile" in capsys.readouterr().err
+
+
+def test_tail_requires_profile() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["tail"])
+    assert exc.value.code == 2
+
+
+def test_tail_bad_config_path_returns_1(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["tail", "test_ig", "--config", "/no/such/file.yml"]) == 1
+    assert "config error" in capsys.readouterr().err

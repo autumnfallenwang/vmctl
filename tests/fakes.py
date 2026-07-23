@@ -15,12 +15,15 @@ class FakeConnection(Connection):
         run_stdout: Callable[[str], str] | None = None,
         run_error: TransportError | None = None,
         lines: list[str] | None = None,
+        stream_error: TransportError | None = None,
     ) -> None:
         self.host = host
         self._run_stdout = run_stdout or (lambda _cmd: "")
         self._run_error = run_error
         self._lines = lines or []
+        self._stream_error = stream_error
         self.closed = False
+        self.stream_cmds: list[str] = []
 
     async def run(self, cmd: str) -> CommandResult:
         if self._run_error is not None:
@@ -28,8 +31,11 @@ class FakeConnection(Connection):
         return CommandResult(self.host, 0, self._run_stdout(cmd), "")
 
     async def stream(self, cmd: str) -> AsyncIterator[str]:
+        self.stream_cmds.append(cmd)
         for line in self._lines:
             yield line
+        if self._stream_error is not None:
+            raise self._stream_error
 
     async def close(self) -> None:
         self.closed = True
