@@ -26,7 +26,7 @@ and the dependency order.
 | [M03](03-framing-and-ecs-envelope.md) | Framing & ECS envelope | Codecs + metadata envelope (fixture-driven) | 0003, 0004, 0005 | planned |
 | [M04](04-tail-command.md) | `tail` command | Live merged stream across hosts | 0005 | planned |
 | [M05](05-search-command.md) | `search` command | KQL + three-tier pushdown, no store | 0005 | planned |
-| [M06](06-packaging-and-deploy.md) | Packaging & deploy | Wheel, pip/venv on RHEL-like, 0.1.0 | 0001 | planned |
+| [M06](06-packaging-and-deploy.md) | Packaging & deploy | Wheel, pip/venv, 0.1.0, release CI | 0001 | ✅ done |
 | [M07](07-resumable-offset-registry.md) | Offset registry | Resumable exactly-once (optional) | 0005 | planned (stretch) |
 | [M08](08-dsl-query-interface.md) | Machine-only interface | Query DSL in, NDJSON out | 0007 | ✅ done |
 | [M09](09-field-discovery.md) | Field discovery | `vmctl fields` — what is queryable | 0008 | ✅ done |

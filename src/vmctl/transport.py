@@ -113,7 +113,11 @@ class AsyncSSHTransport(Transport):
                 timeout=connect_timeout,
             )
         except (asyncssh.Error, OSError, asyncio.TimeoutError) as exc:
-            raise TransportError(host, f"connect failed: {exc}") from exc
+            # Some failures (notably a timeout) carry an empty message — fall back to the
+            # exception type so the error is never a bare "connect failed:". Test str(exc),
+            # not exc: the exception object is always truthy even when its message is empty.
+            detail = str(exc) or type(exc).__name__
+            raise TransportError(host, f"connect failed: {detail}") from exc
         return AsyncSSHConnection(host, conn)
 
 

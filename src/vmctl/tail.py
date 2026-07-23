@@ -137,7 +137,7 @@ async def run_tail(
                 await tail_session(conn, host.host)
                 return  # all streams ended cleanly (not a drop) — this host is done
             except TransportError as exc:
-                report_error(f"{host.host}: {exc}")
+                report_error(str(exc))  # TransportError already carries the host name
             finally:
                 if conn is not None:
                     with contextlib.suppress(Exception):

@@ -1,0 +1,56 @@
+name: release
+
+# Publish a wheel to GitHub Releases when a version tag is pushed.
+#
+# Flow: bump `__version__` in src/vmctl/__init__.py, commit to main, then push a
+# matching tag:  git tag v0.1.0 && git push origin v0.1.0
+# The wheel is built here in CI (never committed) and attached to the release.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write # required to create the release and upload the wheel
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        # setup-uv uses immutable releases with no floating major tag — pin an exact version.
+        uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Verify the tag matches src/vmctl/__init__.py
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(uv run python -c 'import vmctl; print(vmctl.__version__)')"
+          echo "tag=$tag  package=$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match __version__ $pkg — bump src/vmctl/__init__.py"
+            exit 1
+          fi
+
+      # The pre-publish gate. Integration tests need the live lab, so they are excluded.
+      - name: Lint
+        run: uv run ruff check .
+      - name: Typecheck
+        run: uv run pyright
+      - name: Test (fast)
+        run: uv run pytest -m 'not integration'
+
+      - name: Build the wheel + sdist
+        run: uv build
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3.0.2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

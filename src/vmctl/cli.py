@@ -176,7 +176,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
     # NDJSON, like every other command: one object per host/input pair.
     for host in result.hosts:
         if host.error is not None:
-            print(f"{host.host}: ERROR {host.error}", file=sys.stderr)
+            print(f"ERROR: {host.error}", file=sys.stderr)  # host.error already names the host
             continue
         for matched in host.inputs:
             print(

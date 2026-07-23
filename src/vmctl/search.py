@@ -121,7 +121,7 @@ async def run_search(
                     await read_file(conn, host.host, inp, file_path)
         except TransportError as exc:
             had_error = True
-            report_error(f"{host.host}: {exc}")
+            report_error(str(exc))  # TransportError already carries the host name
         finally:
             if conn is not None:
                 with contextlib.suppress(Exception):

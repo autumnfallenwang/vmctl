@@ -56,6 +56,43 @@ and `match_all`; the full-text and scoring clauses are rejected with a reason, s
 vmctl has no index or analyzer. See
 [ADR 0007](docs/adr/0007-machine-only-interface.md) for the supported subset.
 
+## Install
+
+vmctl is a wheel that installs into a plain `venv` with `pip` — no `uv` at runtime.
+The target needs only **Python 3.12+** and `pip`. Grab the wheel from the repo's
+[Releases](https://github.com/autumnfallenwang/vmctl/releases) page.
+
+```sh
+python3.12 -m venv /opt/vmctl-venv
+/opt/vmctl-venv/bin/pip install vmctl-0.1.0-py3-none-any.whl
+/opt/vmctl-venv/bin/vmctl --version
+```
+
+`pip install` puts the `vmctl` launcher in `/opt/vmctl-venv/bin/` and pulls the
+runtime deps (`asyncssh`, `pyyaml`, …) from PyPI. Run it by full path, or expose the
+command — symlink just it (venv otherwise hidden), or activate the venv:
+
+```sh
+sudo ln -s /opt/vmctl-venv/bin/vmctl /usr/local/bin/vmctl   # `vmctl` works everywhere
+# or, for the current shell only:
+source /opt/vmctl-venv/bin/activate
+```
+
+Don't move the venv folder after creating it — the launcher's interpreter path is
+baked in. Re-create it at the target location instead.
+
+**Offline / airgapped hosts** have no PyPI, so pre-stage every dependency on a
+machine matching the target's OS/arch/Python (`cryptography`/`cffi` are compiled),
+then install with no network:
+
+```sh
+pip download -r requirements.txt vmctl-0.1.0-py3-none-any.whl -d bundle/
+# copy bundle/ to the target, then:
+/opt/vmctl-venv/bin/pip install --no-index --find-links bundle/ vmctl
+```
+
+`requirements.txt` pins the full transitive tree for reproducible installs.
+
 ## Status
 
 M01–M09 shipped: config + SSH transport, ECS framing, and the four subcommands
@@ -67,13 +104,43 @@ above, verified against a two-host lab. See:
 
 ## Development
 
+vmctl targets Python **3.12+**. `uv` is a development-time tool only — the shipped
+wheel installs into a plain `venv` via `pip` (see [Install](#install)).
+
 ```sh
 uv sync                              # create the venv, install vmctl + dev tools
 uv run vmctl --version               # run the CLI
 uv run ruff check .                  # lint
 uv run pyright                       # typecheck
 uv run pytest -m 'not integration'   # fast tests
+uv run pytest -m integration         # live tests (need the lab + VMCTL_SSH_PASSWORD)
 ```
 
-vmctl targets Python **3.12+** and installs into a plain `venv` via `pip` for
-deployment (uv is a development-time tool only).
+### Build
+
+```sh
+uv build                             # -> dist/vmctl-<version>-py3-none-any.whl + .tar.gz
+```
+
+The wheel is a build artifact (`dist/` is gitignored) — never commit it. The version
+comes from `__version__` in `src/vmctl/__init__.py`, not from git.
+
+### Release
+
+Releases are cut by pushing a version tag; CI
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds the wheel
+and attaches it to a GitHub Release. It refuses to publish if the tag and
+`__version__` disagree, or if the check loop (lint / typecheck / fast tests) fails.
+
+```sh
+# 1. bump __version__ in src/vmctl/__init__.py, commit, push to main
+# 2. tag it and push the tag — this triggers the release workflow
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Regenerate the pinned deploy manifest when dependencies change:
+
+```sh
+uv export --no-hashes --no-dev --no-emit-project > requirements.txt
+```

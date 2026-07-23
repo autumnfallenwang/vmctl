@@ -234,7 +234,7 @@ async def run_fields(
                     await sample_file(conn, host.host, inp, _remote_path(base_dir, rel))
         except TransportError as exc:
             had_error = True
-            report_error(f"{host.host}: {exc}")
+            report_error(str(exc))  # TransportError already carries the host name
         finally:
             if conn is not None:
                 with contextlib.suppress(Exception):

@@ -1,0 +1,17 @@
+# Locked runtime dependencies for pip-only / airgapped installs (docs/milestones/06).
+#
+# pyproject.toml is the source of truth for loose constraints (asyncssh>=2.14, pyyaml>=6);
+# this file is the pinned resolution of the full transitive tree, for reproducible deploys.
+# Regenerate with:  uv export --no-hashes --no-dev --no-emit-project > requirements.txt
+#
+# Online install:   pip install vmctl-<ver>-py3-none-any.whl
+# Offline install:  pip download -r requirements.txt vmctl-<ver>-py3-none-any.whl -d bundle/
+#                   pip install --no-index --find-links bundle/ vmctl
+# Note: cryptography/cffi are compiled — build the offline bundle on the target's OS/arch/Python.
+
+asyncssh==2.24.0
+cffi==2.1.0 ; platform_python_implementation != 'PyPy'
+cryptography==49.0.0
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pyyaml==6.0.3
+typing-extensions==4.16.0
