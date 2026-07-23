@@ -1,0 +1,81 @@
+---
+milestone: 9
+title: field discovery (vmctl fields)
+status: planned
+started: TBD
+---
+
+# M09 — field discovery (`vmctl fields`)
+
+`vmctl fields <profile>` reports what is queryable, in Elasticsearch's `_field_caps`
+response shape. Implements [ADR 0008](../adr/0008-field-discovery.md).
+
+Without it, someone who does not already know the log's structure cannot write a filter
+at all: the ECS envelope is knowable in advance ([ADR 0004](../adr/0004-ecs-output-schema.md)),
+but the log's own fields — `response.statusCode`, `ig.routeId`, `http.request.method` —
+are invisible until a record is inspected. Elasticsearch answers this with `_field_caps`
+and `_mapping`; vmctl currently answers it with a `jq` incantation that is both folklore
+and misleading (one record only, and it flattens arrays to unqueryable `headers.host.0`
+paths). For a tool whose premise is that an agent drives it, an agent that cannot
+discover the schema cannot use the tool.
+
+## Scope
+
+### A. Sampling
+- Per host × input: glob files (reuse `discovery.build_glob_command` / `apply_excludes`),
+  read the tail of each via the transport, frame with the input's codec, assemble ECS
+  events — the same pipeline `search` uses, so what is reported is exactly what is
+  queryable.
+- `--sample N` bounds records read per input (default 500).
+
+### B. Field inference
+- Walk each event to its **queryable dotted leaf paths**. An array contributes its
+  element paths, never `.0` indices — matching the array semantics tier 3 implements.
+- Infer an Elasticsearch **type-family** name per field: `keyword` / `date` / `long` /
+  `double` / `boolean`. Strings are always `keyword`, never `text`, and there is no
+  invented `string` family — ES has none.
+- Track, per field: which datasets carry it, which hosts carry it, how many sampled
+  records contain it, and a few example values.
+
+### C. `_field_caps`-shaped output
+- One JSON object (valid NDJSON — a single line). Top level is **exactly** `indices` +
+  `fields`; type-keyed entries carry `metadata_field` / `searchable` / `aggregatable`,
+  the latter three **hardcoded** (`false` / `true` / `false`) because they describe
+  index configuration vmctl does not have — honest constants, never inferred from data.
+- Per-field `indices` is **emitted only on disagreement**, omitted when uniform: the
+  prose says "null", every documented example omits the key, and we follow the examples.
+- vmctl-only additions (`docs_sampled`, `coverage`, `examples`, `hosts`,
+  `host_conflicts`) live under a namespaced `vmctl` key so a strict `_field_caps`
+  consumer ignores them cleanly.
+
+### D. CLI
+- `vmctl fields <profile> [--type T] [--sample N] [--config PATH]`, consistent with the
+  other subcommands. Samples every host by default — that is the only way host drift
+  becomes visible.
+
+## Exit criteria
+
+- [ ] `vmctl fields test_ig` reports all three datasets and their fields from both hosts.
+- [ ] Output parses as a `_field_caps` response: `indices` + `fields`, type-keyed entries.
+- [ ] A field in only one dataset lists only that dataset; a type conflict across
+      datasets appears under both type keys.
+- [ ] Array fields are reported at their queryable path (`http.request.headers.host`),
+      not `...host.0` — asserted against the real audit log.
+- [ ] `--type` narrows to one input; `--sample` bounds the read and is reported.
+- [ ] Every field reported is actually usable in a `search --filter` (round-trip test).
+- [ ] `indices` is absent for a field common to all datasets, present for a partial one.
+- [ ] Check loop green; a marked integration test runs against the live VMs.
+
+## Non-goals (this milestone)
+- An `index_filter` analogue (fields among events matching a query) — documented for
+  `_field_caps`, but Elastic notes it is best-effort and "may return an index even if
+  the provided filter matches no document"; a caveat not worth inheriting yet.
+- A `_mapping` analogue — vmctl has no declared schema to report, only an observed one.
+- Aggregations or value distributions beyond a few examples (Kibana Discover's job).
+- The index-presupposing `_field_caps` keys: `non_searchable_indices`,
+  `non_aggregatable_indices`, `time_series_*`, `non_dimension_indices`,
+  `metric_conflicts_indices`, `meta`.
+
+## Progress
+
+- (not started)

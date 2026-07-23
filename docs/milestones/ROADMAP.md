@@ -14,6 +14,8 @@ and the dependency order.
 | [0004](../adr/0004-ecs-output-schema.md) | Output = ECS event; put vs parse fields; domain fields under `labels.*` |
 | [0005](../adr/0005-collection-and-search-execution.md) | Commands `tail` / `search`; KQL index-less; three-tier pushdown |
 | [0006](../adr/0006-runtime-transport-asyncssh.md) | `asyncssh` transport, async core, `pyyaml` config, `argparse` CLI |
+| [0007](../adr/0007-machine-only-interface.md) | Machine-only: Query DSL (JSON) is the sole input, NDJSON the sole output |
+| [0008](../adr/0008-field-discovery.md) | `vmctl fields` — schema discovery in `_field_caps` shape (observed, not declared) |
 
 ## Milestone index
 
@@ -26,6 +28,11 @@ and the dependency order.
 | [M05](05-search-command.md) | `search` command | KQL + three-tier pushdown, no store | 0005 | planned |
 | [M06](06-packaging-and-deploy.md) | Packaging & deploy | Wheel, pip/venv on RHEL-like, 0.1.0 | 0001 | planned |
 | [M07](07-resumable-offset-registry.md) | Offset registry | Resumable exactly-once (optional) | 0005 | planned (stretch) |
+| [M08](08-dsl-query-interface.md) | Machine-only interface | Query DSL in, NDJSON out | 0007 | ✅ done |
+| [M09](09-field-discovery.md) | Field discovery | `vmctl fields` — what is queryable | 0008 | planned |
+
+M08 ran ahead of M06/M07 (both unstarted), and M09 follows it; they keep the existing
+numbering so committed cross-references stay valid.
 
 ## Dependency order
 
