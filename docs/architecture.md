@@ -48,8 +48,8 @@ Because vmctl's whole job is multi-host log fanout, it is developed against a pu
 ## Open questions
 
 - **SSH transport.** Shell out to the system `ssh` binary (inherits the user's config, jump hosts, known_hosts) or use a library such as `asyncssh` / `paramiko`? Password auth pushes against the plain-binary option; not decided.
-- **Where filtering happens.** Run `grep`/`tail` filters on the remote side to cut bytes over the wire, or ship lines back and filter locally for consistency? Likely a split, but the line isn't drawn.
-- **Search query interface.** Search output should be JSON, but the query syntax is undecided — the intent is to reference existing search query tools rather than invent one.
+- ~~**Where filtering happens.**~~ **Resolved ([ADR 0005](adr/0005-collection-and-search-execution.md)):** both — a sound pushdown on the servers (`find`/`grep`/`awk`) plus exact evaluation on the client, via three-tier predicate resolution.
+- ~~**Search query interface.**~~ **Resolved ([ADR 0005](adr/0005-collection-and-search-execution.md)):** KQL, evaluated index-less against the ECS events (no Elasticsearch store).
 - **Host-count scale.** Test env is fixed at 2 (see above); production target is ~4 behind an LB. The profile format must not assume a specific count.
 - **Python version floor — resolved: 3.12.** Governs the machine vmctl *runs on* (operator/agent/jump host), not the log hosts, which never execute vmctl's Python. RHEL 9 deployment uses the `python3.12` appstream module. To be pinned as `requires-python = ">=3.12"` in [milestone 01](milestones/01-test-infra-and-framework.md).
 - **Module breakdown.** The internal layout of `src/vmctl/` is deferred to the first product milestone (M03), once the test harness exists to build against.
