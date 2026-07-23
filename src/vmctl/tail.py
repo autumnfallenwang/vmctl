@@ -5,8 +5,9 @@ Per host: connect once, glob each input's files, and run one ``tail -F`` per fil
 known). Every stream frames with its input's codec and assembles ECS events; all
 streams merge through one queue to a single writer.
 
-`start_position` is not yet honoured (always starts at end); reconnect/rotation
-resilience is track D.
+`start_position` selects whether the file is replayed from the top or followed from the
+end; a dropped connection reconnects with exponential backoff, and rotation is followed
+inherently by ``tail -F``.
 """
 
 from __future__ import annotations

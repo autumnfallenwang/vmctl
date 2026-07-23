@@ -24,8 +24,10 @@ class FakeConnection(Connection):
         self._stream_error = stream_error
         self.closed = False
         self.stream_cmds: list[str] = []
+        self.run_cmds: list[str] = []
 
     async def run(self, cmd: str) -> CommandResult:
+        self.run_cmds.append(cmd)
         if self._run_error is not None:
             raise self._run_error
         return CommandResult(self.host, 0, self._run_stdout(cmd), "")
