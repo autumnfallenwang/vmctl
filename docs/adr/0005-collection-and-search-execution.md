@@ -14,10 +14,19 @@
 
 Both modes share the same core: `resolve profile → per host, expand each rule's glob → read with the rule's codec (framing) → build the ECS event`. They differ only at the two ends:
 
-- **stream** = `mode: tail` (the Logstash file-input option in the rule) → remote `tail -F`: follow, live, unbounded, continuous output to terminal/file.
-- **search** = `mode: read` → bounded historical read of the file(s) + a **query** that keeps only matches → a bounded result set to terminal/file/JSON.
+- **`tail`** = `mode: tail` (the Logstash file-input option in the rule) → remote `tail -F`: follow, live, unbounded, continuous output to terminal/file.
+- **`search`** = `mode: read` → bounded historical read of the file(s) + a KQL query that keeps only matches → a bounded result set to terminal/file/JSON.
 
-`mode: tail` vs `mode: read` *is* the stream-vs-search switch, and it already lives in the rule (0003).
+`mode: tail` vs `mode: read` *is* the tail-vs-search switch, and it already lives in the rule (0003).
+
+### CLI commands
+
+The two user-facing subcommands are fixed as **`tail`** and **`search`** — **not** "stream" or "query":
+
+- `vmctl tail <profile> …` — the follow mode (`mode: tail`); log lines streamed to terminal/file.
+- `vmctl search <profile> -q '<KQL>' …` — the read mode (`mode: read`); KQL-filtered results.
+
+`tail` mirrors both `tail -F` and the rule's `mode: tail`; `search` names the action. "stream" and "query" are avoided as command words (a KQL *query* is still the argument to `search`).
 
 ### Query language: KQL, evaluated index-less
 
@@ -64,4 +73,5 @@ Tier-1/2 pushdown must be a **sound superset** — it may never drop a true matc
 ## Notes
 
 - Settles the **"where does filtering happen"** (answer: a sound pushdown on the servers *plus* exact evaluation on the client) and **"search query interface"** (answer: KQL) items deferred in earlier docs.
+- **Added 2026-07-22:** fixed the CLI subcommand names as **`tail`** and **`search`** (not "stream"/"query").
 - Builds on [0003](./0003-log-source-config-model.md) (rules / codecs / `mode`) and [0004](./0004-ecs-output-schema.md) (ECS fields). Reference: KQL, the Logstash `date` filter, and predicate pushdown in federated query engines.
