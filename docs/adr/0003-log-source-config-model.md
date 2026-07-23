@@ -1,4 +1,4 @@
-# 0003 — Log source config model (profiles + rules)
+# 0003 — Log config model: follow Logstash (ELK-compatible), in YAML
 
 - **Status:** accepted
 - **Date:** 2026-07-22
@@ -6,20 +6,20 @@
 
 ## Context
 
-vmctl needs a config that says, per deployment, **which log files to collect on each host and how to label them** — the file-input stage of a log shipper. Rather than invent a format, we adopt the established **Logstash `file` input / Filebeat `inputs`** model (glob-based file discovery + labeling + path/field extraction), in a simplified form.
+vmctl reads log files across hosts and emits records. The decision is to **completely follow the ELK / Logstash model and make vmctl ELK-compatible**, rather than invent a format or blend multiple tools. **Logstash is the single reference — not Filebeat, not anything else.** The one deliberate deviation: we author config in **YAML** (vmctl's choice), where Logstash uses its own config DSL. Field names and semantics still track Logstash 1:1.
 
-Scope of this ADR is **only the config model** — profiles and rules. The output envelope, its field names, the collection transport, the offset registry, and the search interface are **not** decided here.
+This ADR locks the **config model** (how log sources and rules are declared). The exhaustive ECS field list is left to the living design doc.
 
 ## Decision
 
-Config is YAML. Two levels:
-
-- A **profile** is one deployment: a set of `hosts` plus a list of `rules`.
-- A **rule** is one logset. It carries:
-  - `pattern` — a glob (relative to a `base_dir`) matching the logfiles, `*`-suffixed to include rotated forms. **Files are discovered by expanding the glob per host at run time**, not pre-enumerated — routes/files that are deployed or deleted are picked up or dropped automatically.
-  - `type` — a label for the logset (e.g. `route-system-log`, `route-log`, `audit`).
-  - `format` — `text` or `json`.
-  - a **metadata-extraction recipe** — how to derive per-record fields (notably `routeId`) from one of: the **filename** (regex capture), a **json field** (path), or a **constant**. The recipe is defined once and applies to every file/record the pattern matches — no per-route rule needed.
+- **Reference model:** the Logstash pipeline — **input → filter → output** — and the **Elastic Common Schema (ECS)** for events. No Filebeat, no bespoke format.
+- **Config format:** **YAML** (our only divergence from Logstash, which uses its own DSL). YAML keys map 1:1 to Logstash option names.
+- **A profile** = a deployment: a set of `hosts` plus a Logstash-style pipeline.
+- **A rule = a Logstash `file` input**, YAML-rendered, using Logstash's own option names:
+  - `path` (glob array, `*`-suffixed to include rotated files), `exclude`, `start_position` (`beginning`/`end`), `mode` (`tail`/`read`), `codec` (`plain`/`json`/`multiline`), `type`, `tags`.
+  - Files are discovered by glob expansion (Logstash's discovery); read position is tracked **sincedb-style**.
+- **Metadata extraction** follows Logstash **filters** — e.g. `grok` on `path` to pull `routeId` from a filename, the `json` codec/filter for structured records. Not a bespoke extraction recipe.
+- **Output** is an **ECS event** (ELK-compatible): the raw line as `message`, plus `log.file.path`, `host.name`, `event.dataset` / `type`, and any filter-added fields — so records could be sent to Elasticsearch unchanged.
 
 Illustrative shape (from the test env):
 
@@ -29,31 +29,34 @@ profiles:
     hosts:
       - { host: 192.168.77.11, user: vmctl }
       - { host: 192.168.77.12, user: vmctl }
-    base_dir: /opt/ig-instance/logs
-    rules:
-      - type: route-system-log
-        pattern: "route-system.log*"
-        format: text
-      - type: route-log
-        pattern: "route-*.log*"
-        exclude: "route-system.log*"
-        format: text
-        route_from: { source: filename, regex: "route-(?P<routeId>.+?)\\.log" }
-      - type: audit-access
-        pattern: "audit/*.audit.json*"
-        format: json
-        route_from: { source: field, path: "ig.routeId" }
+    inputs:                                    # Logstash file inputs, in YAML
+      - path: [ "/opt/ig-instance/logs/route-system.log*" ]
+        type: route-system-log
+        mode: tail
+        start_position: end
+        codec: multiline                       # [CONTINUED] continuation lines
+      - path: [ "/opt/ig-instance/logs/route-*.log*" ]
+        exclude: [ "route-system.log*" ]
+        type: route-log
+        mode: tail
+        codec: multiline
+      - path: [ "/opt/ig-instance/logs/audit/*.audit.json*" ]
+        type: audit-access
+        mode: tail
+        codec: json
+    filters:                                   # Logstash filters, in YAML
+      - if: '[type] == "route-log"'
+        grok: { match: { "path": 'route-%{DATA:routeId}\.log' } }
+      # audit-access: routeId already present as [ig][routeId] from the json codec
 ```
-
-This is a deliberate subset of Filebeat/Logstash inputs (paths + tags + grok-on-path / json-decode). No bespoke format is invented.
 
 ## Consequences
 
-- **Positive:** a familiar, proven model; dynamic route/file coverage from static config; one rule covers all current and future routes; agentless-friendly (the glob is expanded remotely over SSH).
-- **Limits:** metadata is only what the glob + extraction recipe can express; per-host glob expansion adds a remote call per run.
-- **Explicitly deferred (NOT decided here):** the output envelope and its field schema, field naming (ECS-aligned vs custom), the collection transport (`tail -F` / `grep`), the offset/resume registry, and the search query interface.
+- **Positive:** ELK-compatible by construction — output could ship to Elasticsearch unchanged; a proven, documented model; nothing invented; anyone who knows Logstash already knows our config.
+- **Costs / limits:** we inherit Logstash's concepts (sincedb, codecs, filters, ECS) even where a lighter model would do; the YAML↔Logstash key mapping needs to be documented and kept faithful.
+- **Still living (in `docs/architecture.md`, not frozen here):** the exact ECS field set, the full YAML↔Logstash option mapping, the SSH collection transport, and the search interface.
 
 ## Notes
 
-- Builds on [0001](./0001-initial-stack.md) and [0002](./0002-dev-test-infra.md). Derived from the Logstash `file` input and Filebeat `inputs` patterns.
-- The field-level envelope schema will be settled later and tracked in `docs/architecture.md`, not frozen here.
+- **Revised 2026-07-22** from an initial "simplified subset of Filebeat/Logstash" framing to **full Logstash/ELK alignment** with Logstash as the sole reference and YAML config.
+- Builds on [0001](./0001-initial-stack.md) and [0002](./0002-dev-test-infra.md). Reference: the Logstash `file` input plugin and ECS.
