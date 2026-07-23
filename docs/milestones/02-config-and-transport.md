@@ -1,7 +1,7 @@
 ---
 milestone: 2
 title: Config & transport foundation
-status: active
+status: done
 started: 2026-07-22
 ---
 
@@ -35,11 +35,11 @@ parsing) and [ADR 0006](../adr/0006-runtime-transport-asyncssh.md) (transport). 
 
 ## Exit criteria
 
-- [ ] A real profile YAML parses into validated models; malformed config fails with a clear message.
-- [ ] `vmctl discover test_ig` connects to `ig1` + `ig2` **by password** and lists the files each rule matches on each host.
-- [ ] One host being unreachable degrades gracefully (reported, others continue).
-- [ ] Config parsing has unit tests; discovery has a `@pytest.mark.integration` test against the live VMs.
-- [ ] `asyncssh` + `pyyaml` added to `pyproject.toml`; `uv sync` + the check loop stay green.
+- [x] A real profile YAML parses into validated models; malformed config fails with a clear message.
+- [x] `vmctl discover test_ig` connects to `ig1` + `ig2` **by password** and lists the files each rule matches on each host.
+- [x] One host being unreachable degrades gracefully (reported, others continue).
+- [x] Config parsing has unit tests; discovery has a `@pytest.mark.integration` test against the live VMs.
+- [x] `asyncssh` + `pyyaml` added to `pyproject.toml`; `uv sync` + the check loop stay green.
 
 ## Non-goals (this milestone)
 - Any codec/framing or ECS enveloping (→ M03).
@@ -49,3 +49,14 @@ parsing) and [ADR 0006](../adr/0006-runtime-transport-asyncssh.md) (transport). 
 ## Progress
 
 - 2026-07-22: Milestone opened from the roadmap; foundation for M03/M04.
+- 2026-07-22: Track A shipped — `src/vmctl/config.py` (dataclass models + pyyaml loader, Logstash `inputs`/`filters` schema per ADR 0003, both codec forms, validation with clear errors) + `testenv/infra/vmctl.example.yml` + 6 config unit tests. `pyyaml` added to deps. Check loop green. (Corrected the milestone's loose "rules" wording to ADR 0003's `inputs`/`filters`.)
+- 2026-07-22: Tracks B+C+D shipped — `transport.py` (asyncssh `Transport`/`Connection` + `run_on_hosts` fan-out), `credentials.py` (env/prompt password), `discovery.py` (per-host remote glob via `nullglob`+`printf`, client-side exclude, injection-guarded), and a `vmctl discover` subcommand. `asyncssh` added. Verified live: `vmctl discover test_ig` lists matched files on both VMs by password. **All M02 exit criteria met.** Live run caught a glob bug — rotated `route-system-<date>.log` leaked into `ig-route`; fixed the example config's globs to `route-system*` and hardened the test.
+- 2026-07-22: Enhancement — optional per-host inline `password` in config (**highest priority**), falling back to env/prompt only for hosts without one; example YAML switched to block/list style. Real lab config with passwords lives in gitignored `testenv/infra/vmctl.yml`; the tracked example stays secret-free. Verified live with the env var unset (inline passwords used).
+
+## Outcome
+
+Shipped the foundation: `config.py` (Logstash `inputs`/`filters` YAML model + validating loader), `transport.py` (agentless async SSH — `asyncssh` behind a swappable `Transport` interface, concurrent fan-out with per-host error isolation), `credentials.py` (env/prompt fallback), `discovery.py` (per-host remote glob discovery), and the `vmctl discover` command — all verified live against `ig1`/`ig2` by password. First runtime deps added (`pyyaml`, `asyncssh`). 27 fast unit tests + 1 live integration test.
+
+Deviations/additions beyond the original plan: corrected "rules" → ADR 0003's `inputs`/`filters`; added per-host inline passwords (highest priority) for ergonomics; fixed a rotation-glob bug the live run surfaced. Lesson captured in the note above (rotation globs — use `route-system*`, not `route-system.log*`).
+
+Closed: 2026-07-22

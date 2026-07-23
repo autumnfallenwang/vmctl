@@ -19,6 +19,7 @@ venv/
 
 # testenv secrets + Vagrant state (never commit test credentials)
 testenv/infra/creds.env
+testenv/infra/vmctl.yml
 testenv/**/.vagrant/
 
 # Licensed binaries — the IG zip is fetched locally, never committed

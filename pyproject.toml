@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "A CLI for streaming and searching ForgeRock logs across identical SSH-reachable deployments, when you don't have ELK"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["pyyaml>=6", "asyncssh>=2.14"]
 
 [project.scripts]
 vmctl = "vmctl.cli:main"
@@ -20,7 +20,7 @@ path = "src/vmctl/__init__.py"
 packages = ["src/vmctl"]
 
 [dependency-groups]
-dev = ["ruff", "pyright", "pytest"]
+dev = ["ruff", "pyright", "pytest", "types-PyYAML"]
 
 [tool.ruff]
 target-version = "py312"

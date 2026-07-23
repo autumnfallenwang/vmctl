@@ -1,0 +1,56 @@
+# Example vmctl profile config for the test lab (supersedes the M01 inventory stub).
+#
+# Follows the Logstash file-input model in YAML (docs/adr/0003).
+#
+# Each host may carry an inline `password:` (highest priority). It is OMITTED here
+# because this file is committed — a config with passwords holds secrets and must be
+# gitignored (see testenv/infra/vmctl.yml). With no inline password, vmctl falls back
+# to $VMCTL_SSH_PASSWORD or an interactive prompt (docs/adr/0002, 0006).
+
+profiles:
+  test_ig:
+    hosts:
+      - host: 192.168.77.11
+        user: vmctl
+        # password: your-password-here   # optional; if set, wins over env/prompt
+      - host: 192.168.77.12
+        user: vmctl
+        # password: your-password-here
+    base_dir: /opt/ig-instance/logs
+    inputs:
+      # IG system log — one logical event spans several lines (exception stacks),
+      # so multiline anchored on the leading ISO timestamp.
+      # `route-system*` (not `route-system.log*`) so rotated files like
+      # route-system-2026-07-22.0.log are included — rotation inserts before `.log`.
+      - type: ig-system
+        path: ["route-system*"]
+        mode: tail
+        start_position: end
+        codec:
+          multiline:
+            pattern: '^\d{4}-\d{2}-\d{2}T'
+            negate: true
+            what: previous
+
+      # Per-route capture logs — same multiline shape; routeId comes from the filename.
+      # Exclude every system log (base + rotated) via `route-system*`.
+      - type: ig-route
+        path: ["route-*.log*"]
+        exclude: ["route-system*"]
+        mode: tail
+        codec:
+          multiline:
+            pattern: '^\d{4}-\d{2}-\d{2}T'
+            negate: true
+            what: previous
+
+      # Audit access log — one JSON object per line.
+      - type: ig-audit
+        path: ["audit/*.audit.json*"]
+        mode: tail
+        codec: json
+
+    filters:
+      # routeId for route logs is captured from the file path (audit already has ig.routeId).
+      - if: '[type] == "ig-route"'
+        grok: { path: 'route-%{DATA:routeId}\.log' }
