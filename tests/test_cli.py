@@ -13,12 +13,13 @@ def test_no_command_prints_help() -> None:
     assert main([]) == 0
 
 
-def test_output_defaults_to_ndjson() -> None:
-    """Piping is the common case, so the default must stay machine-readable."""
+def test_no_output_flag_anywhere() -> None:
+    """ADR 0007: NDJSON is the only output, so there is nothing to choose between."""
     parser = build_parser()
-    assert parser.parse_args(["tail", "p"]).output == "ndjson"
-    assert parser.parse_args(["search", "p", "-q", "a:1"]).output == "ndjson"
-    assert parser.parse_args(["tail", "p", "--output", "human"]).output == "human"
+    for argv in (["tail", "p"], ["search", "p", "--filter", "{}"], ["discover", "p"]):
+        assert not hasattr(parser.parse_args(argv), "output")
+    with pytest.raises(SystemExit):
+        parser.parse_args(["tail", "p", "--output", "human"])
 
 
 def test_discover_requires_profile() -> None:
@@ -63,25 +64,49 @@ def _config(tmp_path: Path) -> str:
     return str(cfg)
 
 
-def test_search_requires_query() -> None:
-    with pytest.raises(SystemExit) as exc:
-        main(["search", "test_ig"])  # -q is required
-    assert exc.value.code == 2
+FILTER = '{"term": {"a": "1"}}'
 
 
 def test_search_bad_config_path_returns_1(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["search", "test_ig", "-q", "a:1", "--config", "/no/such/file.yml"]) == 1
+    assert main(["search", "test_ig", "--filter", FILTER, "--config", "/no/such/file.yml"]) == 1
     assert "config error" in capsys.readouterr().err
 
 
-def test_search_reports_bad_kql(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["search", "p", "-q", "a:", "--config", _config(tmp_path)]) == 1
+def test_search_reports_bad_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["search", "p", "--filter", "{not json", "--config", _config(tmp_path)]) == 1
     assert "query error" in capsys.readouterr().err
 
 
-def test_search_reports_bad_time_bound(
+def test_search_reports_unsupported_construct(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    args = ["search", "p", "-q", "a:1", "--since", "yesterday", "--config", _config(tmp_path)]
+    """An unsupported clause must fail loudly, never match everything silently."""
+    args = [
+        "search", "p",
+        "--filter", '{"match": {"message": "boom"}}',
+        "--config", _config(tmp_path),
+    ]
     assert main(args) == 1
-    assert "invalid time bound" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "query error" in err and "analyzer" in err
+
+
+def test_search_filter_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    bad = tmp_path / "f.json"
+    bad.write_text('{"size": 10, "query": {"match_all": {}}}')
+    args = ["search", "p", "--filter-file", str(bad), "--config", _config(tmp_path)]
+    assert main(args) == 1
+    assert "size" in capsys.readouterr().err
+
+
+def test_search_rejects_both_filter_sources(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = [
+        "search", "p",
+        "--filter", FILTER,
+        "--filter-file", "/tmp/x.json",
+        "--config", _config(tmp_path),
+    ]
+    assert main(args) == 1
+    assert "not both" in capsys.readouterr().err

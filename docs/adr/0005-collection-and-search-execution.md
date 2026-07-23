@@ -30,6 +30,10 @@ The two user-facing subcommands are fixed as **`tail`** and **`search`** — **n
 
 ### Query language: KQL, evaluated index-less
 
+> **Superseded by [0007](./0007-machine-only-interface.md) (2026-07-23):** the query input is now
+> Elasticsearch **Query DSL** (JSON), not KQL, and NDJSON is the *only* output. The rest of this
+> ADR — two modes, three-tier resolution, pushdown soundness, time-window mechanics — stands.
+
 - Search queries use **KQL** (Kibana Query Language) — ELK-compatible: `field:value`, booleans, ranges, wildcards, `exists`.
 - With no index or store, KQL is evaluated **against the ECS events in memory** — a linear scan — not against a stored index.
 - The query is a **runtime argument**, scoped to the whole profile by default and narrowed *inside the query* via ECS-field predicates (`event.dataset:ig.audit`, `labels.route_id:00-proxy`). It is **not** baked into a rule. Rules describe sourcing/framing; the query is what you ask at run time.

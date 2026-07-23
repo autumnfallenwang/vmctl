@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from vmctl.kql import Node
+from vmctl.predicate import Node
 from vmctl.planner import conjuncts
 
 # A leading ISO date, spelled without `{n}` intervals so any POSIX awk accepts it.
@@ -69,6 +69,29 @@ def window_from(since: datetime | None, until: datetime | None) -> Window:
         since=bound_to_prefix(since) if since is not None else None,
         until=bound_to_prefix(until) if until is not None else None,
     )
+
+
+def window_from_query(node: Node, *, field: str = "@timestamp") -> Window:
+    """Derive the remote time window from `@timestamp` range predicates in the filter.
+
+    The query carries its own bounds, so a `range` on `@timestamp` reaches the remote
+    `awk` instead of only being checked on the client. Exclusive bounds (`>`/`<`) are
+    treated as inclusive — a widening, which keeps the pushdown a sound superset; tier
+    3 still applies the exact comparison.
+    """
+    since: str | None = None
+    until: str | None = None
+    for conjunct in conjuncts(node):
+        if conjunct.field != field:
+            continue
+        prefix = conjunct.value[:_PREFIX_LEN]
+        if len(prefix) < _PREFIX_LEN:
+            continue  # too coarse to compare against a full timestamp prefix
+        if conjunct.op in (">=", ">"):
+            since = prefix if since is None else max(since, prefix)
+        elif conjunct.op in ("<=", "<"):
+            until = prefix if until is None else min(until, prefix)
+    return Window(since=since, until=until)
 
 
 def pushable_terms(node: Node, *, codec_name: str) -> list[str]:

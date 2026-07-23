@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Callable
-from datetime import datetime, timezone
 from typing import Any
 
 from vmctl import planner
@@ -26,8 +25,8 @@ from vmctl.codecs import frame_lines, make_codec
 from vmctl.config import Host, Input, Profile
 from vmctl.discovery import apply_excludes, build_glob_command
 from vmctl.event import assemble
-from vmctl.kql import Node
-from vmctl.pushdown import Window, build_read_command, pushable_terms, window_from
+from vmctl.predicate import Node
+from vmctl.pushdown import Window, build_read_command, pushable_terms, window_from_query
 from vmctl.query import matches
 from vmctl.transport import Connection, Transport, TransportError
 
@@ -46,23 +45,22 @@ async def run_search(
     query: Node,
     fallback_password: str | None,
     type_filter: str | None = None,
-    since: datetime | None = None,
-    until: datetime | None = None,
     write: Callable[[dict[str, Any]], None],
     report_error: Callable[[str], None] = lambda _m: None,
     no_pushdown: bool = False,
 ) -> int:
     """Search every matching input across the profile's hosts. Returns 1 if a host failed.
 
-    `no_pushdown` forces a full `cat` scan with no remote filtering — the baseline a
-    pushed-down run is compared against to prove the pushdown is sound.
+    The time window comes from `@timestamp` range predicates inside `query` — the filter
+    carries its own bounds. `no_pushdown` forces a full `cat` scan with no remote
+    filtering, the baseline a pushed-down run is compared against to prove soundness.
     """
     inputs = [i for i in profile.inputs if type_filter is None or i.type == type_filter]
     if type_filter is not None and not inputs:
         report_error(f"no input of type '{type_filter}' in profile '{profile.name}'")
         return 1
 
-    window = Window() if no_pushdown else window_from(since, until)
+    window = Window() if no_pushdown else window_from_query(query)
     base_dir = profile.base_dir or "."
     results: list[dict[str, Any]] = []
     scanned: list[str] = []
@@ -84,7 +82,7 @@ async def run_search(
                 file_path=file_path,
                 filters=profile.filters,
             )
-            if _in_window(event, since, until) and matches(query, event):
+            if matches(query, event):
                 results.append(event)
 
     async def host_worker(host: Host) -> None:
@@ -137,35 +135,3 @@ async def run_search(
 
     report_error(f"scanned {len(scanned)} file(s); {len(results)} match(es)")
     return 1 if had_error else 0
-
-
-def _in_window(
-    event: dict[str, Any], since: datetime | None, until: datetime | None
-) -> bool:
-    """Exact client-side time filter. An unparseable timestamp is kept — the remote
-    filter is only ever a superset, and the KQL predicate still has to pass."""
-    if since is None and until is None:
-        return True
-    at = _event_time(event)
-    if at is None:
-        return True
-    if since is not None and at < _aware(since):
-        return False
-    return not (until is not None and at > _aware(until))
-
-
-def _event_time(event: dict[str, Any]) -> datetime | None:
-    raw = event.get("@timestamp")
-    if not isinstance(raw, str):
-        return None
-    text = raw.strip().replace(",", ".")
-    if text.endswith("Z"):
-        text = f"{text[:-1]}+00:00"
-    try:
-        return _aware(datetime.fromisoformat(text))
-    except ValueError:
-        return None
-
-
-def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)

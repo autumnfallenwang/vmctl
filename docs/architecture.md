@@ -4,7 +4,10 @@ vmctl streams and searches logs across the hosts of a single deployment over SSH
 
 ## System shape
 
-The tool is a command-line binary meant to be easy for both humans and AI agents to drive. Hosts come from a YAML config and are wrapped into profiles — for example `TEST_IG:` containing `IG1` (hostname, username, password), `IG2`, and so on — with room for whatever other metadata is needed later. A profile names one deployment; the concrete motivating case is a ForgeRock IG deployed identically on 4 servers behind a load balancer, where each host carries its own system logfile plus per-route logfiles. Connections are SSH with username/password. The password may change, and password management is the user's responsibility.
+The tool is a command-line binary built as a **machine interface** — its consumers are AI
+agents, scripts and pipelines ([ADR 0007](adr/0007-machine-only-interface.md)): filters go
+in as Elasticsearch Query DSL, records come out as NDJSON, and there is no human-facing
+rendering. (`jq` is the reader of last resort.) Hosts come from a YAML config and are wrapped into profiles — for example `TEST_IG:` containing `IG1` (hostname, username, password), `IG2`, and so on — with room for whatever other metadata is needed later. A profile names one deployment; the concrete motivating case is a ForgeRock IG deployed identically on 4 servers behind a load balancer, where each host carries its own system logfile plus per-route logfiles. Connections are SSH with username/password. The password may change, and password management is the user's responsibility.
 
 The remote side is a standard RHEL environment with basic commands like `tail` available, but with no ability to install additional tooling — so whatever runs out there must be composed from what is already present. vmctl fans out across the hosts in a profile, targets a particular log path or logfile, and brings the lines back. ForgeRock product logs are already essentially standard JSON, so vmctl does not attempt to parse arbitrary input; it adds metadata on top of each record to label its source. Streaming can go to the terminal and to a local logfile. Search output should also be JSON. The split between filtering on the remote side and filtering locally is not yet settled, and neither is the search query interface.
 

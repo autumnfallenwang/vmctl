@@ -10,14 +10,16 @@ import asyncio
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from dslq import all_of, q, rng, term
+
 from vmctl.config import load_config
-from vmctl.kql import parse
 from vmctl.search import run_search
 from vmctl.transport import AsyncSSHTransport
 
@@ -33,7 +35,16 @@ def _password() -> str:
     return password
 
 
+FLUSH_WAIT = 4.0  # IG's audit write is async; measured ~1.06s, so this is ~4x margin
+
+
 def _drive(count: int = 30) -> None:
+    """Generate traffic, then wait for it to reach disk.
+
+    IG's audit handler writes asynchronously, so a record lands on disk after the moment
+    it timestamps. Waiting here — rather than shrinking the query window to dodge the
+    race — means the tests below can bound exactly the traffic they generated.
+    """
     subprocess.run(
         [sys.executable, str(DRIVE), "--count", str(count), "--delay", "0.03"],
         cwd=str(ROOT),
@@ -41,16 +52,17 @@ def _drive(count: int = 30) -> None:
         stderr=subprocess.DEVNULL,
         check=False,
     )
+    time.sleep(FLUSH_WAIT)
 
 
-def _search(query: str, **kw: Any) -> list[dict[str, Any]]:
+def _search(clause: dict, **kw: Any) -> list[dict[str, Any]]:
     profile = load_config(EXAMPLE).profiles["test_ig"]
     events: list[dict[str, Any]] = []
     rc = asyncio.run(
         run_search(
             AsyncSSHTransport(),
             profile,
-            query=parse(query),
+            query=q(clause),
             fallback_password=_password(),
             write=events.append,
             **kw,
@@ -58,6 +70,11 @@ def _search(query: str, **kw: Any) -> list[dict[str, Any]]:
     )
     assert rc == 0, "a host failed during the live search"
     return events
+
+
+def _iso(at: datetime) -> str:
+    """An absolute ISO-8601 bound — the DSL takes no date math (ADR 0007)."""
+    return at.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _identity(event: dict[str, Any]) -> tuple[str, str, str]:
@@ -71,8 +88,11 @@ def _identity(event: dict[str, Any]) -> tuple[str, str, str]:
 @pytest.mark.integration
 def test_search_live_finds_audit_events_from_both_hosts() -> None:
     _drive()
-    since = datetime.now(timezone.utc) - timedelta(minutes=30)
-    events = _search("event.dataset:ig-audit", type_filter="ig-audit", since=since)
+    since = _iso(datetime.now(timezone.utc) - timedelta(minutes=30))
+    events = _search(
+        all_of(term("event.dataset", "ig-audit"), rng("@timestamp", gte=since)),
+        type_filter="ig-audit",
+    )
 
     assert events, "no events returned from the live search"
     hosts = {e["host"]["name"] for e in events}
@@ -87,17 +107,21 @@ def test_search_live_finds_audit_events_from_both_hosts() -> None:
 def test_pushdown_is_sound() -> None:
     """Pushed-down results must equal a full scan filtered on the client."""
     _drive()
-    # A closed window makes both runs see the same bounded set even if traffic continues.
-    # It has to end in the *past*: IG's audit write is asynchronous (measured ~1s), so a
-    # record can land on disk after the moment it timestamps. Ending the window at `now`
-    # would let a flush arrive between the two runs and add events the first never saw.
-    # A minute of margin makes the comparison independent of that latency entirely.
-    until = datetime.now(timezone.utc) - timedelta(minutes=1)
-    since = until - timedelta(minutes=30)
-    query = "event.dataset:ig-audit and response.statusCode:200"
+    # `_drive` has already waited out the async audit write, so everything timestamped
+    # at or before `now` is on disk — both runs therefore see the same bounded set.
+    until_at = datetime.now(timezone.utc)
+    query = all_of(
+        term("event.dataset", "ig-audit"),
+        term("response.statusCode", 200),
+        rng(
+            "@timestamp",
+            gte=_iso(until_at - timedelta(minutes=30)),
+            lte=_iso(until_at),
+        ),
+    )
 
-    pushed = _search(query, type_filter="ig-audit", since=since, until=until)
-    full = _search(query, type_filter="ig-audit", since=since, until=until, no_pushdown=True)
+    pushed = _search(query, type_filter="ig-audit")
+    full = _search(query, type_filter="ig-audit", no_pushdown=True)
 
     assert pushed, "the query matched nothing — the comparison would be vacuous"
     assert {_identity(e) for e in pushed} == {_identity(e) for e in full}
@@ -107,11 +131,14 @@ def test_pushdown_is_sound() -> None:
 def test_route_id_selects_only_that_routes_file() -> None:
     """Tier-1 file selection: a route_id predicate opens only that route's log."""
     _drive()
-    since = datetime.now(timezone.utc) - timedelta(minutes=30)
+    since = _iso(datetime.now(timezone.utc) - timedelta(minutes=30))
     events = _search(
-        "event.dataset:ig-route and labels.route_id:00-proxy",
+        all_of(
+            term("event.dataset", "ig-route"),
+            term("labels.route_id", "00-proxy"),
+            rng("@timestamp", gte=since),
+        ),
         type_filter="ig-route",
-        since=since,
     )
 
     assert events, "no route-log events returned"

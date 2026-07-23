@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from vmctl.filters import apply_filters
-from vmctl.kql import And, Match, Node
+from vmctl.predicate import And, Match, Node
 from vmctl.query import matches, resolve_field
 
 if TYPE_CHECKING:

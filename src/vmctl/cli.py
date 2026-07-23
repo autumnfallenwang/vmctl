@@ -1,25 +1,26 @@
 """Command-line entry point for vmctl.
 
 Three subcommands: `discover` (list the files each input matches on each host),
-`tail` (follow them live) and `search` (bounded read + KQL). See docs/adr/0005.
+`tail` (follow them live) and `search` (bounded read + Query DSL filter).
 
-Output defaults to NDJSON — one ECS event per line, the shape a pipe, a JSON tool or an
-agent wants. `--output human` is the opt-in scannable rendering.
+vmctl is a machine interface (docs/adr/0007): every command emits **NDJSON only**, one
+JSON object per line, and `search` takes its filter as **Elasticsearch Query DSL** — the
+same JSON you would put in the body of `POST /<index>/_search`.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
-from datetime import datetime, timezone
 
 from vmctl import __version__
 from vmctl.config import ConfigError, Profile, load_config
 from vmctl.credentials import CredentialsError, resolve_password
 from vmctl.discovery import DiscoveryError, discover
-from vmctl.kql import KQLError, parse
-from vmctl.output import to_human, to_ndjson
+from vmctl.dsl import DSLError, parse_dsl
+from vmctl.output import to_ndjson
 from vmctl.search import run_search
 from vmctl.tail import run_tail
 from vmctl.transport import AsyncSSHTransport
@@ -47,22 +48,22 @@ def build_parser() -> argparse.ArgumentParser:
     tail_p.add_argument("profile", help="profile name from the config")
     tail_p.add_argument("--config", default=None, help="path to the profile config (YAML)")
     tail_p.add_argument("--type", default=None, help="only stream this input type")
-    tail_p.add_argument("--output", choices=["ndjson", "human"], default="ndjson")
     tail_p.add_argument("--file", default=None, help="append output to this file instead of stdout")
     tail_p.set_defaults(func=cmd_tail)
 
     search_p = sub.add_parser(
-        "search", help="search logs across a profile's hosts with a KQL query"
+        "search", help="search logs across a profile's hosts with an Elasticsearch Query DSL filter"
     )
     search_p.add_argument("profile", help="profile name from the config")
     search_p.add_argument("--config", default=None, help="path to the profile config (YAML)")
     search_p.add_argument(
-        "-q", "--query", required=True, help="KQL query, e.g. 'event.dataset:ig-audit'"
+        "--filter",
+        default=None,
+        help='Query DSL as JSON, e.g. \'{"term":{"event.dataset":"ig-audit"}}\'. '
+        "Reads stdin when neither --filter nor --filter-file is given.",
     )
+    search_p.add_argument("--filter-file", default=None, help="read the Query DSL from a file")
     search_p.add_argument("--type", default=None, help="only search this input type")
-    search_p.add_argument("--since", default=None, help="ISO-8601 lower bound (inclusive)")
-    search_p.add_argument("--until", default=None, help="ISO-8601 upper bound (inclusive)")
-    search_p.add_argument("--output", choices=["ndjson", "human"], default="ndjson")
     search_p.add_argument(
         "--file", default=None, help="append output to this file instead of stdout"
     )
@@ -116,15 +117,21 @@ def _fallback_password(profile: Profile) -> tuple[str | None, bool]:
     return None, True
 
 
-def _parse_bound(value: str) -> datetime:
-    """Parse a `--since`/`--until` bound. Accepts a date, a partial or full ISO-8601
-    timestamp, comma- or dot-millis, with or without a trailing `Z`; a value carrying no
-    zone is read as UTC. Raises ValueError on anything else."""
-    text = value.strip().replace(",", ".")
-    if text.endswith("Z"):
-        text = f"{text[:-1]}+00:00"
-    at = datetime.fromisoformat(text)
-    return at if at.tzinfo is not None else at.replace(tzinfo=timezone.utc)
+def _read_filter(args: argparse.Namespace) -> str:
+    """The Query DSL text, from --filter, --filter-file, or stdin."""
+    if args.filter and args.filter_file:
+        raise DSLError("give either --filter or --filter-file, not both")
+    if args.filter:
+        return args.filter
+    if args.filter_file:
+        try:
+            with open(args.filter_file, encoding="utf-8") as handle:
+                return handle.read()
+        except OSError as exc:
+            raise DSLError(f"cannot read --filter-file: {exc}") from exc
+    if sys.stdin.isatty():
+        raise DSLError("no filter given — pass --filter, --filter-file, or pipe JSON on stdin")
+    return sys.stdin.read()
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
@@ -141,13 +148,19 @@ def cmd_discover(args: argparse.Namespace) -> int:
         print(f"discovery error: {exc}", file=sys.stderr)
         return 1
 
+    # NDJSON, like every other command: one object per host/input pair.
     for host in result.hosts:
         if host.error is not None:
             print(f"{host.host}: ERROR {host.error}", file=sys.stderr)
             continue
         for matched in host.inputs:
-            files = ", ".join(matched.files) if matched.files else "(no files matched)"
-            print(f"{host.host}  {matched.type}: {files}")
+            print(
+                json.dumps(
+                    {"host": {"name": host.host}, "type": matched.type, "files": matched.files},
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
 
     return 0 if result.ok else 1
 
@@ -160,11 +173,10 @@ def cmd_tail(args: argparse.Namespace) -> int:
     if not ok:
         return 1
 
-    render = to_ndjson if args.output == "ndjson" else to_human
     out = open(args.file, "a", encoding="utf-8") if args.file else sys.stdout
 
     def write(event: dict[str, object]) -> None:
-        print(render(event), file=out, flush=True)
+        print(to_ndjson(event), file=out, flush=True)
 
     try:
         return asyncio.run(
@@ -189,28 +201,21 @@ def cmd_search(args: argparse.Namespace) -> int:
     if profile is None:
         return 1
 
-    # Fail on a bad query or bad bound before prompting for a password.
+    # Fail on a bad filter before prompting for a password.
     try:
-        query = parse(args.query)
-    except KQLError as exc:
+        query = parse_dsl(_read_filter(args))
+    except DSLError as exc:
         print(f"query error: {exc}", file=sys.stderr)
-        return 1
-    try:
-        since = _parse_bound(args.since) if args.since else None
-        until = _parse_bound(args.until) if args.until else None
-    except ValueError as exc:
-        print(f"invalid time bound: {exc}", file=sys.stderr)
         return 1
 
     fallback, ok = _fallback_password(profile)
     if not ok:
         return 1
 
-    render = to_ndjson if args.output == "ndjson" else to_human
     out = open(args.file, "a", encoding="utf-8") if args.file else sys.stdout
 
     def write(event: dict[str, object]) -> None:
-        print(render(event), file=out, flush=True)
+        print(to_ndjson(event), file=out, flush=True)
 
     try:
         return asyncio.run(
@@ -220,8 +225,6 @@ def cmd_search(args: argparse.Namespace) -> int:
                 query=query,
                 fallback_password=fallback,
                 type_filter=args.type,
-                since=since,
-                until=until,
                 write=write,
                 report_error=lambda msg: print(msg, file=sys.stderr),
                 no_pushdown=args.no_pushdown,

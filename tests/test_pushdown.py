@@ -13,8 +13,16 @@ from pathlib import Path
 
 import pytest
 
-from vmctl.kql import parse
-from vmctl.pushdown import Window, bound_to_prefix, build_read_command, pushable_terms, window_from
+from dslq import all_of, any_of, q, term
+
+from vmctl.pushdown import (
+    Window,
+    bound_to_prefix,
+    build_read_command,
+    pushable_terms,
+    window_from,
+    window_from_query,
+)
 
 CORPUS = Path(__file__).resolve().parents[1] / "testenv" / "corpus"
 
@@ -136,7 +144,7 @@ def test_bounds_truncated_to_second() -> None:
 
 
 def test_terms_only_for_json_codec() -> None:
-    query = parse("response.statusCode:500")
+    query = q(term("response.statusCode", 500))
     assert pushable_terms(query, codec_name="json") == ["500"]
     # A grep would drop the continuation lines of a multi-line event.
     assert pushable_terms(query, codec_name="multiline") == []
@@ -144,29 +152,55 @@ def test_terms_only_for_json_codec() -> None:
 
 
 def test_terms_reject_put_fields_wildcards_and_floats() -> None:
-    def terms(q: str) -> list[str]:
-        return pushable_terms(parse(q), codec_name="json")
+    def terms(clause: dict) -> list[str]:
+        return pushable_terms(q(clause), codec_name="json")
 
-    assert terms("host.name:192.168.77.11") == []  # generated, never in the text
-    assert terms("event.dataset:ig-audit") == []
-    assert terms("log.file.path:/logs/a.json") == []
-    assert terms("@timestamp:2026") == []
-    assert terms("labels.profile:test_ig") == []
-    assert terms("labels.route_id:00-*") == []  # wildcard isn't a substring
-    assert terms("response.statusCode:*") == []  # exists says nothing about the text
-    assert terms("response.elapsedTime:500.0") == []  # could be written 5e2 in the file
-    assert terms("response.statusCode >= 500") == []  # only `:` terms are substrings
+    assert terms(term("host.name", "192.168.77.11")) == []  # generated, never in the text
+    assert terms(term("event.dataset", "ig-audit")) == []
+    assert terms(term("log.file.path", "/logs/a.json")) == []
+    assert terms(term("@timestamp", "2026")) == []
+    assert terms(term("labels.profile", "test_ig")) == []
+    assert terms({"wildcard": {"labels.route_id": "00-*"}}) == []  # not a substring
+    assert terms({"exists": {"field": "response.statusCode"}}) == []  # says nothing
+    assert terms(term("response.elapsedTime", 500.0)) == []  # could be 5e2 in the file
+    assert terms({"range": {"response.statusCode": {"gte": 500}}}) == []  # not a substring
 
 
 def test_terms_reject_unsafe_values() -> None:
-    assert pushable_terms(parse("""a:"it's" """), codec_name="json") == []
-    assert pushable_terms(parse('a:"$(rm -rf /)"'), codec_name="json") == []
+    assert pushable_terms(q(term("a", "it's")), codec_name="json") == []
+    assert pushable_terms(q(term("a", "$(rm -rf /)")), codec_name="json") == []
 
 
 def test_terms_ignore_or_branches() -> None:
     # Neither side of an `or` is required, so neither may be pushed.
-    assert pushable_terms(parse("a:1 or b:2"), codec_name="json") == []
-    assert pushable_terms(parse("a:1 and (b:2 or c:3)"), codec_name="json") == ["1"]
+    assert pushable_terms(q(any_of(term("a", 1), term("b", 2))), codec_name="json") == []
+    assert (
+        pushable_terms(
+            q(all_of(term("a", 1), any_of(term("b", 2), term("c", 3)))), codec_name="json"
+        )
+        == ["1"]
+    )
+
+
+def test_window_comes_from_the_query() -> None:
+    """A `range` on @timestamp reaches the remote awk — the filter carries its bounds."""
+    node = q(
+        all_of(
+            term("event.dataset", "ig-audit"),
+            {"range": {"@timestamp": {"gte": "2026-07-23T14:38:00Z", "lt": "2026-07-23T14:39:00"}}},
+        )
+    )
+    assert window_from_query(node) == Window(
+        since="2026-07-23T14:38:00", until="2026-07-23T14:39:00"
+    )
+    # No @timestamp predicate -> no window, so the whole file is read.
+    assert window_from_query(q(term("a", "b"))).empty
+    # An `or` cannot narrow: neither branch is required.
+    assert window_from_query(
+        q(any_of({"range": {"@timestamp": {"gte": "2026-07-23T00:00:00"}}}, term("a", "b")))
+    ).empty
+    # A bound too coarse to compare against a 19-char prefix is ignored, not guessed at.
+    assert window_from_query(q({"range": {"@timestamp": {"gte": "2026-07-23"}}})).empty
 
 
 def test_refuses_quoted_path() -> None:

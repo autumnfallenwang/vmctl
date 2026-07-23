@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from vmctl.output import to_human, to_ndjson
+from vmctl.output import to_ndjson
 
 EVENT = {
     "@timestamp": "2026-07-23T00:04:54.741000+00:00",
@@ -21,8 +21,8 @@ def test_to_ndjson_roundtrips() -> None:
     assert json.loads(line) == EVENT
 
 
-def test_to_human_summary() -> None:
-    line = to_human(EVENT)
-    assert "ig1" in line
-    assert "ig-route[00-proxy]" in line
-    assert "hello" in line and "second line" not in line  # first line only
+def test_ndjson_is_the_only_sink() -> None:
+    """ADR 0007: no human rendering to drift out of step with the record."""
+    import vmctl.output as output
+
+    assert not hasattr(output, "to_human")
