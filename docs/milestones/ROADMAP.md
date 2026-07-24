@@ -18,6 +18,8 @@ and the dependency order.
 | [0008](../adr/0008-field-discovery.md) | `vmctl fields` — schema discovery in `_field_caps` shape (observed, not declared) |
 | [0009](../adr/0009-am-to-the-test-lab.md) | Add ForgeRock AM to the lab — validate general-purpose via a profile-only change |
 | [0010](../adr/0010-minimal-default-parsing.md) | Minimal-by-default parsing: raw always in `message`, `@timestamp` the only default parse, rest declared |
+| [0011](../adr/0011-search-result-limit.md) | `search --limit` = bounded early-exit; trades global `@timestamp` order for a cheap stop (k-way merge rejected as unsound) |
+| [0012](../adr/0012-tail-multiplex-per-input.md) | `tail` multiplexes one `tail -F` per **input**, routing by `==> path <==` headers — clears `MaxSessions` |
 
 ## Milestone index
 
@@ -34,6 +36,7 @@ and the dependency order.
 | [M09](09-field-discovery.md) | Field discovery | `vmctl fields` — what is queryable | 0008 | ✅ done |
 | [M10](10-am-support.md) | AM support | Validate general-purpose: AM logs via a profile-only change | 0009 | ▶ active |
 | [M11](11-minimal-default-parsing.md) | Minimal-default parsing | Raw always in message, @timestamp the only default parse | 0010 | planned |
+| [M12](12-field-findings-fixes.md) | Field findings | Part 1: bug + 2 defects + 2 enhancements · Part 2: tail multiplex + search streaming read | 0011, 0012 | ✅ done |
 
 M08 ran ahead of M06/M07 (both unstarted), and M09 follows it; they keep the existing
 numbering so committed cross-references stay valid.

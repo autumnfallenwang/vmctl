@@ -56,6 +56,30 @@ and `match_all`; the full-text and scoring clauses are rejected with a reason, s
 vmctl has no index or analyzer. See
 [ADR 0007](docs/adr/0007-machine-only-interface.md) for the supported subset.
 
+**Scoping & limits** — both `search` and `tail` take `--host <name>` (repeatable, or
+comma-separated) to run against a subset of the profile's hosts instead of all of them.
+`search` also takes `--limit N` to stop once N matches are collected — it returns the
+earliest N found, not a guaranteed global top-N, so tighten the `@timestamp` range for a
+deterministic window ([ADR 0011](docs/adr/0011-search-result-limit.md)).
+
+```sh
+# only ig1, and stop after 20 hits
+vmctl search test_ig --config vmctl.yml --host 192.168.77.11 --limit 20 --filter '{"match_all":{}}'
+```
+
+**On Windows / PowerShell**, an inline `--filter '{...}'` loses its quotes before vmctl
+sees it. Use `--filter-file <path>`, or pipe the JSON on stdin: `... | vmctl search <profile> --filter -`
+(or just omit both `--filter` and `--filter-file`).
+
+**`tail` and many files** — `tail` follows **all of an input's files over one SSH channel**
+(one `tail -F` per input, routing lines by the `==> path <==` header tail prints on a file
+switch — [ADR 0012](docs/adr/0012-tail-multiplex-per-input.md)). So the channel count per
+host is the number of *inputs*, not the number of files: an input matching 67 route logs
+still costs one channel, staying clear of OpenSSH's `MaxSessions` (default 10) with no
+remote change. The profile-level `max_concurrent_files:` (default 8) caps those concurrent
+channels; if a profile needs more, `tail` refuses that host with one clear error — narrow
+`--type`/`--host`, or raise both the cap and sshd's `MaxSessions`.
+
 ## Parsing: codecs, timestamps, filters
 
 By default vmctl does the minimum ([ADR 0010](docs/adr/0010-minimal-default-parsing.md)):

@@ -33,6 +33,8 @@ _EPILOG = (
     "human-readable mode. Pipe through `jq` to read it by eye.\n"
     "Query: `search` takes an Elasticsearch Query DSL filter; run `fields` first to discover "
     "what you can filter on.\n"
+    "Windows: PowerShell mangles the quotes in an inline --filter '{...}'. Use --filter-file "
+    "<path>, or pipe the JSON on stdin (--filter - , or just omit both flags).\n"
     "Password: each host may carry an inline `password:` in the config; otherwise vmctl reads "
     "$VMCTL_SSH_PASSWORD, then falls back to an interactive prompt."
 )
@@ -62,6 +64,12 @@ def build_parser() -> argparse.ArgumentParser:
     tail_p.add_argument("profile", help="profile name from the config")
     tail_p.add_argument("--config", default=None, help="path to the profile config (YAML)")
     tail_p.add_argument("--type", default=None, help="only stream this input type")
+    tail_p.add_argument(
+        "--host",
+        action="append",
+        default=None,
+        help="only this host (repeatable, or comma-separated); default: all hosts in the profile",
+    )
     tail_p.add_argument("--file", default=None, help="append output to this file instead of stdout")
     tail_p.set_defaults(func=cmd_tail)
 
@@ -74,10 +82,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--filter",
         default=None,
         help='Query DSL as JSON, e.g. \'{"term":{"event.dataset":"ig-audit"}}\'. '
-        "Reads stdin when neither --filter nor --filter-file is given.",
+        "Use '-' or omit both --filter/--filter-file to read the DSL from stdin "
+        "(the reliable path on Windows/PowerShell).",
     )
     search_p.add_argument("--filter-file", default=None, help="read the Query DSL from a file")
     search_p.add_argument("--type", default=None, help="only search this input type")
+    search_p.add_argument(
+        "--host",
+        action="append",
+        default=None,
+        help="only this host (repeatable, or comma-separated); default: all hosts in the profile",
+    )
+    search_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="stop after N matches (returns the earliest N found, not a global top-N; "
+        "tighten the @timestamp range for a deterministic window)",
+    )
     search_p.add_argument(
         "--file", default=None, help="append output to this file instead of stdout"
     )
@@ -142,10 +164,25 @@ def _fallback_password(profile: Profile) -> tuple[str | None, bool]:
     return None, True
 
 
+def _host_filter(args: argparse.Namespace) -> set[str] | None:
+    """The set of host names from --host (repeatable and/or comma-separated), or None."""
+    raw = getattr(args, "host", None)
+    if not raw:
+        return None
+    names = {part.strip() for item in raw for part in item.split(",") if part.strip()}
+    return names or None
+
+
 def _read_filter(args: argparse.Namespace) -> str:
-    """The Query DSL text, from --filter, --filter-file, or stdin."""
+    """The Query DSL text, from --filter, --filter-file, or stdin.
+
+    `--filter -` reads stdin explicitly — the reliable path on Windows/PowerShell, where
+    inline `--filter '{...}'` loses its quotes before vmctl ever sees the argument.
+    """
     if args.filter and args.filter_file:
         raise DSLError("give either --filter or --filter-file, not both")
+    if args.filter == "-":
+        return sys.stdin.read()
     if args.filter:
         return args.filter
     if args.filter_file:
@@ -210,6 +247,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
                 profile,
                 fallback_password=fallback,
                 type_filter=args.type,
+                host_filter=_host_filter(args),
                 write=write,
                 report_error=lambda msg: print(msg, file=sys.stderr),
             )
@@ -224,6 +262,10 @@ def cmd_tail(args: argparse.Namespace) -> int:
 def cmd_search(args: argparse.Namespace) -> int:
     profile = _load_profile(args)
     if profile is None:
+        return 1
+
+    if args.limit is not None and args.limit < 1:
+        print("search error: --limit must be a positive integer", file=sys.stderr)
         return 1
 
     # Fail on a bad filter before prompting for a password.
@@ -250,6 +292,8 @@ def cmd_search(args: argparse.Namespace) -> int:
                 query=query,
                 fallback_password=fallback,
                 type_filter=args.type,
+                host_filter=_host_filter(args),
+                limit=args.limit,
                 write=write,
                 report_error=lambda msg: print(msg, file=sys.stderr),
                 no_pushdown=args.no_pushdown,

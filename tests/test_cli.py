@@ -128,3 +128,51 @@ def test_fields_sample_flag_parses() -> None:
 
     args = build_parser().parse_args(["fields", "p", "--sample", "42", "--type", "ig-audit"])
     assert args.sample == 42 and args.type == "ig-audit"
+
+
+# --- M12 #3: --filter - reads stdin (the Windows/PowerShell-safe path) -----------
+
+
+def test_read_filter_dash_reads_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from vmctl.cli import _read_filter, build_parser
+
+    args = build_parser().parse_args(["search", "p", "--filter", "-"])
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"term":{"a":"1"}}'))
+    assert _read_filter(args) == '{"term":{"a":"1"}}'
+
+
+def test_read_filter_inline_returns_literal() -> None:
+    from vmctl.cli import _read_filter, build_parser
+
+    args = build_parser().parse_args(["search", "p", "--filter", '{"term":{"a":"1"}}'])
+    assert _read_filter(args) == '{"term":{"a":"1"}}'
+
+
+# --- M12 #4/#5: --host and --limit ------------------------------------------------
+
+
+def test_search_host_and_limit_flags_parse() -> None:
+    args = build_parser().parse_args(
+        ["search", "p", "--host", "h1", "--host", "h2,h3", "--limit", "5"]
+    )
+    assert args.host == ["h1", "h2,h3"] and args.limit == 5
+
+
+def test_host_filter_splits_repeats_and_commas() -> None:
+    from vmctl.cli import _host_filter
+
+    args = build_parser().parse_args(["search", "p", "--host", "h1", "--host", "h2, h3"])
+    assert _host_filter(args) == {"h1", "h2", "h3"}
+
+
+def test_tail_host_flag_parses() -> None:
+    args = build_parser().parse_args(["tail", "p", "--host", "h1"])
+    assert args.host == ["h1"]
+
+
+def test_search_limit_must_be_positive(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = ["search", "p", "--filter", FILTER, "--limit", "0", "--config", _config(tmp_path)]
+    assert main(args) == 1
+    assert "limit" in capsys.readouterr().err

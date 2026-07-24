@@ -89,6 +89,11 @@ class Profile:
     inputs: list[Input]
     base_dir: str | None = None
     filters: list[Filter] = field(default_factory=list)
+    # `tail` opens one SSH channel per *input* (each following all that input's files —
+    # docs/adr/0012) on a single connection; OpenSSH's default MaxSessions is 10. This
+    # caps those concurrent channels per host (default safely under 10). Raise it only
+    # alongside sshd's MaxSessions.
+    max_concurrent_files: int = 8
 
 
 @dataclass
@@ -133,7 +138,17 @@ def _parse_profile(name: str, spec: dict[str, Any]) -> Profile:
     base_dir = spec.get("base_dir")
     if base_dir is not None and not isinstance(base_dir, str):
         raise ConfigError(f"{where}: base_dir must be a string")
-    return Profile(name=name, hosts=hosts, inputs=inputs, base_dir=base_dir, filters=filters)
+    max_concurrent = spec.get("max_concurrent_files", 8)
+    if isinstance(max_concurrent, bool) or not isinstance(max_concurrent, int) or max_concurrent < 1:
+        raise ConfigError(f"{where}: max_concurrent_files must be a positive integer")
+    return Profile(
+        name=name,
+        hosts=hosts,
+        inputs=inputs,
+        base_dir=base_dir,
+        filters=filters,
+        max_concurrent_files=max_concurrent,
+    )
 
 
 def _parse_host(profile: str, spec: Any) -> Host:

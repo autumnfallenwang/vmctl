@@ -25,3 +25,6 @@ testenv/**/.vagrant/
 
 # Licensed binaries — the IG zip is fetched locally, never committed
 testenv/infra/artifacts/
+
+# Local screenshots — scratch captures, never committed
+screenshots/

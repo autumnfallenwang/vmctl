@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -46,7 +46,7 @@ class Connection(ABC):
         """Run a command to completion."""
 
     @abstractmethod
-    def stream(self, cmd: str) -> AsyncIterator[str]:
+    def stream(self, cmd: str) -> AsyncGenerator[str, None]:
         """Run a long-lived command, yielding stdout lines as they arrive (for `tail`)."""
 
     @abstractmethod
@@ -81,7 +81,7 @@ class AsyncSSHConnection(Connection):
             stderr=_as_text(result.stderr),
         )
 
-    async def stream(self, cmd: str) -> AsyncIterator[str]:
+    async def stream(self, cmd: str) -> AsyncGenerator[str, None]:
         try:
             proc = await self._conn.create_process(cmd)
         except (asyncssh.Error, OSError) as exc:

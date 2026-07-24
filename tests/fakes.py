@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 
 from vmctl.transport import CommandResult, Connection, Transport, TransportError
 
@@ -32,7 +32,7 @@ class FakeConnection(Connection):
             raise self._run_error
         return CommandResult(self.host, 0, self._run_stdout(cmd), "")
 
-    async def stream(self, cmd: str) -> AsyncIterator[str]:
+    async def stream(self, cmd: str) -> AsyncGenerator[str, None]:
         self.stream_cmds.append(cmd)
         for line in self._lines:
             yield line

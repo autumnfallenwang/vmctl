@@ -183,3 +183,30 @@ def test_no_profiles_raises(tmp_path: Path) -> None:
     p = _write(tmp_path, "profiles: {}\n")
     with pytest.raises(ConfigError, match="no profiles"):
         load_config(p)
+
+
+def _profile_with(tmp_path: Path, line: str) -> Path:
+    return _write(
+        tmp_path,
+        "profiles:\n"
+        "  p:\n"
+        "    hosts: [{host: h1, user: u}]\n"
+        f"{line}"
+        "    inputs:\n"
+        "      - {type: a, path: 'a.log'}\n",
+    )
+
+
+def test_max_concurrent_files_defaults_to_8(tmp_path: Path) -> None:
+    cfg = load_config(_profile_with(tmp_path, ""))
+    assert cfg.profiles["p"].max_concurrent_files == 8
+
+
+def test_max_concurrent_files_parsed(tmp_path: Path) -> None:
+    cfg = load_config(_profile_with(tmp_path, "    max_concurrent_files: 4\n"))
+    assert cfg.profiles["p"].max_concurrent_files == 4
+
+
+def test_max_concurrent_files_rejects_nonpositive(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="max_concurrent_files"):
+        load_config(_profile_with(tmp_path, "    max_concurrent_files: 0\n"))

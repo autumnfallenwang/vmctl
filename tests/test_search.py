@@ -10,7 +10,7 @@ from dslq import all_of, q, rng, term
 from fakes import FakeConnection, FakeTransport
 
 from vmctl.config import Codec, Host, Input, Profile
-from vmctl.search import run_search
+from vmctl.search import _remote_path, run_search
 
 EARLY = "2026-07-23T00:00:01.000Z"
 LATE = "2026-07-23T00:00:09.000Z"
@@ -37,17 +37,17 @@ def _profile(*hosts: str) -> Profile:
 
 
 def _transport(content: dict[str, str] | str, **kw: Any) -> FakeTransport:
-    """A transport whose glob returns one audit file and whose reads return `content`
-    (per host when a dict) regardless of any pushdown — so the remote side always hands
-    back a superset and tier 3 has to do the real work."""
+    """A transport whose glob (`run`) returns one audit file and whose *streamed* reads
+    return `content` (per host when a dict) regardless of any pushdown — so the remote
+    side always hands back a superset and tier 3 has to do the real work."""
 
     def factory(host: str) -> FakeConnection:
         body = content[host] if isinstance(content, dict) else content
-
-        def stdout(cmd: str) -> str:
-            return "audit/access.audit.json\n" if cmd.startswith("cd ") else body
-
-        return FakeConnection(host, run_stdout=stdout)
+        return FakeConnection(
+            host,
+            run_stdout=lambda cmd: "audit/access.audit.json\n" if cmd.startswith("cd ") else "",
+            lines=body.splitlines(),
+        )
 
     return FakeTransport(conn_factory=factory, **kw)
 
@@ -67,6 +67,57 @@ def _search(
         )
     )
     return rc, events
+
+
+def test_remote_path_joins_relative_glob() -> None:
+    assert _remote_path("/logs", "audit/access.audit.json") == "/logs/audit/access.audit.json"
+
+
+def test_remote_path_leaves_absolute_glob_unjoined() -> None:
+    # M12 bug #1: an absolute discovered path is already absolute; prepending base_dir
+    # doubles it into a nonexistent path that reads back empty (silent 0 matches).
+    assert (
+        _remote_path("/opt/ssologs", "/opt/sso/forgerock/amconfig/sso/debug/IdRepo")
+        == "/opt/sso/forgerock/amconfig/sso/debug/IdRepo"
+    )
+
+
+def test_search_reads_absolute_glob_path_unjoined() -> None:
+    # End-to-end: base_dir set + an absolute input glob → the read must target the
+    # absolute path, not '/opt/ssologs//opt/sso/...'.
+    abs_path = "/opt/sso/forgerock/amconfig/sso/debug/IdRepo"
+
+    def factory(host: str) -> FakeConnection:
+        return FakeConnection(
+            host,
+            run_stdout=lambda cmd: f"{abs_path}\n" if cmd.startswith("cd ") else "",
+            lines=[_audit(EARLY)],
+        )
+
+    profile = Profile(
+        name="p",
+        hosts=[Host("h1", "u", password="x")],
+        inputs=[
+            Input(
+                type="ig-audit",
+                path=["/opt/sso/forgerock/amconfig/sso/debug/*"],
+                codec=Codec(name="json"),
+            )
+        ],
+        base_dir="/opt/ssologs",
+    )
+    transport = FakeTransport(conn_factory=factory)
+    asyncio.run(
+        run_search(
+            transport,
+            profile,
+            query=q(term("event.dataset", "ig-audit")),
+            fallback_password=None,
+            write=lambda _e: None,
+            no_pushdown=True,
+        )
+    )
+    assert transport.connections[0].stream_cmds == [f"cat '{abs_path}'"]
 
 
 def test_search_returns_only_matches() -> None:
@@ -94,12 +145,11 @@ def test_search_no_pushdown_uses_cat() -> None:
 
     pushed = _transport(body)
     _search(pushed, _profile(), windowed)
-    assert any(c.startswith("awk ") for c in pushed.connections[0].run_cmds)
+    assert any(c.startswith("awk ") for c in pushed.connections[0].stream_cmds)
 
     full = _transport(body)
     _search(full, _profile(), windowed, no_pushdown=True)
-    read_cmds = [c for c in full.connections[0].run_cmds if not c.startswith("cd ")]
-    assert read_cmds == ["cat '/logs/audit/access.audit.json'"]
+    assert full.connections[0].stream_cmds == ["cat '/logs/audit/access.audit.json'"]
 
 
 def test_search_time_window_is_exact_client_side() -> None:
@@ -156,6 +206,43 @@ def test_search_unknown_type_errors() -> None:
     )
     assert rc == 1
     assert any("nope" in e for e in errors)
+
+
+def test_search_host_filter_scopes_to_named_host() -> None:
+    # M12 #4: --host narrows the run; h2 is never connected to.
+    transport = _transport({"h1": f"{_audit(EARLY)}\n", "h2": f"{_audit(LATE)}\n"})
+    rc, events = _search(
+        transport, _profile("h1", "h2"), term("event.dataset", "ig-audit"), host_filter={"h1"}
+    )
+    assert rc == 0
+    assert [c[0] for c in transport.calls] == ["h1"]
+    assert {e["host"]["name"] for e in events} == {"h1"}
+
+
+def test_search_unknown_host_errors() -> None:
+    # M12 #4: a host not in the profile is a loud error, not a silent empty run.
+    errors: list[str] = []
+    rc = asyncio.run(
+        run_search(
+            _transport(f"{_audit(EARLY)}\n"),
+            _profile("h1", "h2"),
+            query=q(term("event.dataset", "ig-audit")),
+            fallback_password=None,
+            host_filter={"nope"},
+            write=lambda _e: None,
+            report_error=errors.append,
+        )
+    )
+    assert rc == 1
+    assert any("nope" in e and "unknown host" in e for e in errors)
+
+
+def test_search_limit_caps_results() -> None:
+    # M12 #5: --limit bounds the collected matches (earliest N after the time sort).
+    body = f"{_audit(EARLY)}\n{_audit(LATE)}\n"
+    rc, events = _search(_transport(body), _profile(), term("event.dataset", "ig-audit"), limit=1)
+    assert rc == 0
+    assert [e["timestamp"] for e in events] == [EARLY]  # earliest of the two
 
 
 def test_search_reports_scan_summary() -> None:
