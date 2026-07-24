@@ -46,3 +46,4 @@ The skill picks a slug, writes the file with the right frontmatter, and updates 
 - [uv-run-verify-commands](uv-run-verify-commands.md) — run ruff/pyright/pytest via `uv run`; they live in `.venv`, not global PATH.
 - [ig-test-environment](ig-test-environment.md) — the 2-host Rocky 9 IG lab: hosts, the three log shapes, and where each is configured.
 - [ig-config-gotchas](ig-config-gotchas.md) — sharp edges in PingGateway IG 2024.11 + the Vagrant/Rocky setup.
+- [vagrant-ssh-run-scripts-via-stdin](vagrant-ssh-run-scripts-via-stdin.md) — pipe lab commands to `vagrant ssh -c 'bash -s'`; `-c '<quoted cmd>'` silently returns nothing.
