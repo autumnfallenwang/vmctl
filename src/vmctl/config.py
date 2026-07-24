@@ -38,6 +38,18 @@ class Codec:
 
 
 @dataclass
+class TimestampSpec:
+    """Where to parse the event-time ``@timestamp`` from (docs/adr/0010). Empty = the
+    default auto-detect (a ``timestamp`` JSON field, else a leading ISO token in the raw
+    line). ``field`` reads a parsed JSON field; ``pattern`` + ``format`` extract and
+    strptime from the raw line."""
+
+    field: str | None = None
+    pattern: str | None = None
+    format: str | None = None
+
+
+@dataclass
 class Input:
     """One Logstash-style file input: which files, how to read/frame, how to label."""
 
@@ -48,6 +60,7 @@ class Input:
     mode: str = "tail"
     codec: Codec = field(default_factory=Codec)
     tags: list[str] = field(default_factory=list)
+    timestamp: TimestampSpec = field(default_factory=TimestampSpec)
 
 
 @dataclass
@@ -145,6 +158,7 @@ def _parse_input(profile: str, spec: Any) -> Input:
     mode = _enum(m.get("mode", "tail"), MODES, "mode", where)
     tags = _string_list(m.get("tags", []), "tags", where)
     codec = _parse_codec(m.get("codec", "plain"), where)
+    timestamp = _parse_timestamp(m.get("timestamp"), where)
     return Input(
         type=itype,
         path=path,
@@ -153,7 +167,30 @@ def _parse_input(profile: str, spec: Any) -> Input:
         mode=mode,
         codec=codec,
         tags=tags,
+        timestamp=timestamp,
     )
+
+
+def _parse_timestamp(spec: Any, where: str) -> TimestampSpec:
+    # Optional. `timestamp: {field: X}` reads a JSON field; `timestamp: {pattern: RE,
+    # format: FMT}` extracts from the raw line. The two forms are mutually exclusive.
+    if spec is None:
+        return TimestampSpec()
+    m = _as_mapping(spec, f"{where} timestamp")
+    unknown = set(m) - {"field", "pattern", "format"}
+    if unknown:
+        raise ConfigError(f"{where} timestamp: unknown key(s) {sorted(unknown)}")
+    field_ = m.get("field")
+    pattern = m.get("pattern")
+    fmt = m.get("format")
+    if field_ is not None and (pattern is not None or fmt is not None):
+        raise ConfigError(f"{where} timestamp: use 'field' OR 'pattern'+'format', not both")
+    if (pattern is None) != (fmt is None):
+        raise ConfigError(f"{where} timestamp: 'pattern' and 'format' must be given together")
+    for key, val in (("field", field_), ("pattern", pattern), ("format", fmt)):
+        if val is not None and not isinstance(val, str):
+            raise ConfigError(f"{where} timestamp: '{key}' must be a string")
+    return TimestampSpec(field=field_, pattern=pattern, format=fmt)
 
 
 def _parse_codec(spec: Any, where: str) -> Codec:

@@ -61,6 +61,59 @@ def test_codec_string_and_mapping_forms(tmp_path: Path) -> None:
     assert inputs["c"].codec.pattern == "^X"
 
 
+def test_timestamp_spec_forms(tmp_path: Path) -> None:
+    cfg = load_config(
+        _write(
+            tmp_path,
+            """
+            profiles:
+              p:
+                hosts: [{host: h1, user: u}]
+                inputs:
+                  - {type: a, path: "a.json", codec: json, timestamp: {field: eventTime}}
+                  - type: b
+                    path: "b.log"
+                    timestamp: {pattern: '\\[([^\\]]+)\\]', format: '%d/%b/%Y:%H:%M:%S %z'}
+                  - {type: c, path: "c.log"}   # no timestamp block -> default
+            """,
+        )
+    )
+    inputs = {i.type: i for i in cfg.profiles["p"].inputs}
+    assert inputs["a"].timestamp.field == "eventTime"
+    assert inputs["b"].timestamp.pattern and inputs["b"].timestamp.format == "%d/%b/%Y:%H:%M:%S %z"
+    assert inputs["c"].timestamp.field is None and inputs["c"].timestamp.pattern is None
+
+
+def test_timestamp_spec_conflicting_forms_raise(tmp_path: Path) -> None:
+    p = _write(
+        tmp_path,
+        """
+        profiles:
+          p:
+            hosts: [{host: h1, user: u}]
+            inputs:
+              - {type: a, path: "a.log", timestamp: {field: t, pattern: 'x', format: 'y'}}
+        """,
+    )
+    with pytest.raises(ConfigError, match="not both"):
+        load_config(p)
+
+
+def test_timestamp_spec_pattern_without_format_raises(tmp_path: Path) -> None:
+    p = _write(
+        tmp_path,
+        """
+        profiles:
+          p:
+            hosts: [{host: h1, user: u}]
+            inputs:
+              - {type: a, path: "a.log", timestamp: {pattern: 'x'}}
+        """,
+    )
+    with pytest.raises(ConfigError, match="together"):
+        load_config(p)
+
+
 def test_missing_path_raises(tmp_path: Path) -> None:
     p = _write(
         tmp_path,

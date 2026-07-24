@@ -37,3 +37,26 @@ def test_apply_filters_skips_non_matching_condition() -> None:
     ]
     apply_filters(event, filters, path="/logs/route-x.log")
     assert "route_id" not in event["labels"]  # condition didn't match
+
+
+def test_grok_on_a_json_field_reference() -> None:
+    """ADR 0010: a grok key can be a `[a][b]` field ref, so a parsed JSON field feeds a
+    label — this is how audit route_id is declared now that the auto-mirror is gone."""
+    event = {
+        "event": {"dataset": "ig-audit"},
+        "message": "{...}",
+        "labels": {"profile": "p"},
+        "ig": {"routeId": "00-proxy"},
+    }
+    filters = [
+        Filter(condition='[type] == "ig-audit"', grok={"[ig][routeId]": "%{GREEDYDATA:route_id}"})
+    ]
+    apply_filters(event, filters, path="/logs/audit/access.audit.json")
+    assert event["labels"]["route_id"] == "00-proxy"
+
+
+def test_grok_field_ref_absent_is_noop() -> None:
+    event = {"event": {"dataset": "ig-audit"}, "message": "x", "labels": {}}
+    filters = [Filter(grok={"[ig][routeId]": "%{GREEDYDATA:route_id}"})]
+    apply_filters(event, filters, path="/x")  # no `ig` field present
+    assert "route_id" not in event["labels"]

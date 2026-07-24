@@ -83,7 +83,8 @@ def test_run_tail_merges_two_hosts() -> None:
     assert rc == 0
     assert {e["host"]["name"] for e in events} == {"h1", "h2"}
     assert all(e["event"]["dataset"] == "ig-audit" for e in events)
-    assert all(e["labels"]["route_id"] == "r1" for e in events)
+    # route_id is no longer auto-mirrored (ADR 0010); this inline profile has no filter.
+    assert all("route_id" not in e.get("labels", {}) for e in events)
 
 
 def test_run_tail_type_filter() -> None:

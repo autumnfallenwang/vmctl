@@ -34,7 +34,7 @@ _PREFIX_LEN = 19  # YYYY-MM-DDTHH:MM:SS
 
 # Fields vmctl generates rather than reads out of the line — their values are nowhere in
 # the file, so grepping for one would drop every line.
-_PUT_FIELDS = {"@timestamp", "event.dataset", "event.created", "event.original", "labels.profile"}
+_PUT_FIELDS = {"@timestamp", "event.dataset", "event.created", "labels.profile"}
 _PUT_PREFIXES = ("host.", "agent.", "log.", "ecs.")
 
 _SAFE_TERM = re.compile(r"^[A-Za-z0-9._:@/+ -]+$")

@@ -54,22 +54,29 @@ def matches_condition(condition: str | None, event: dict[str, Any]) -> bool:
 
 
 def apply_filters(event: dict[str, Any], filters: list[Filter], *, path: str) -> None:
-    """Run each matching filter's grok against the file `path` / `message`, writing
-    the captured named groups into ``event['labels']``."""
-    # A grok on `message` applies to unparsed records only — a parsed one has no
-    # `message`, exactly as in Logstash, and its content is already in merged fields.
+    """Run each matching filter's grok and write the captured named groups into
+    ``event['labels']``. A grok key is ``path``, ``message``, or a field reference like
+    ``[ig][routeId]`` — so a parsed JSON field can feed a grok into a label (ADR 0010)."""
     sources = {"path": path, "message": event.get("message", "")}
     labels = event.setdefault("labels", {})
     for filt in filters:
         if filt.grok is None or not matches_condition(filt.condition, event):
             continue
         for field_name, grok_pattern in filt.grok.items():
-            target = sources.get(field_name)
+            target = _grok_source(field_name, sources, event)
             if not isinstance(target, str):
                 continue
             match = grok_to_regex(grok_pattern).search(target)
             if match:
                 labels.update(match.groupdict())
+
+
+def _grok_source(field_name: str, sources: dict[str, str], event: dict[str, Any]) -> Any:
+    """Resolve a grok source: the literal ``path``/``message``, or a ``[a][b]`` field ref."""
+    if field_name in sources:
+        return sources[field_name]
+    refs = _FIELD_REF.findall(field_name)
+    return _resolve_field(refs, event) if refs else None
 
 
 def _resolve_field(fields: list[str], event: dict[str, Any]) -> Any:

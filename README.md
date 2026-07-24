@@ -56,6 +56,59 @@ and `match_all`; the full-text and scoring clauses are rejected with a reason, s
 vmctl has no index or analyzer. See
 [ADR 0007](docs/adr/0007-machine-only-interface.md) for the supported subset.
 
+## Parsing: codecs, timestamps, filters
+
+By default vmctl does the minimum ([ADR 0010](docs/adr/0010-minimal-default-parsing.md)):
+the **whole raw line is always in `message`**, and the **only** field parsed from the
+content is **`@timestamp`**. Everything else is opt-in, per input.
+
+**Codec** — how the file is framed (and whether parsed):
+
+| `codec:` | Effect |
+|---|---|
+| `plain` (default) | one event per line; raw line in `message` |
+| `json` | one JSON object per line; **its fields are merged to the top level** (so they're directly queryable) — the raw line still stays in `message` |
+| `multiline: { pattern, negate, what }` | join physical lines into one event (e.g. stack traces, `[CONTINUED]` lines); `pattern` anchors a new event |
+
+Because `json` merges fields, **you usually don't need a filter for JSON logs** — run
+`vmctl fields <profile>` to see every field, then query it directly.
+
+**`@timestamp`** — auto-detected by default (a `timestamp` JSON field, else a leading
+ISO-8601 token in the line). For a log whose event-time is elsewhere or in another format,
+declare it per input; a value that can't be parsed falls back to the collection time.
+
+```yaml
+- type: am-audit
+  codec: json
+  timestamp: { field: timestamp }              # take @timestamp from this JSON field
+- type: ds-errors                              # lines lead with [24/Jul/2026:00:14:45 +0000]
+  codec: { multiline: { pattern: '^\[', negate: true, what: previous } }
+  timestamp: { pattern: '\[([^\]]+)\]', format: '%d/%b/%Y:%H:%M:%S %z' }  # regex + strptime
+```
+
+**Filters** — declare any *other* extraction into `labels.*`. These are **Logstash grok**,
+but vmctl implements a small subset — the only supported patterns are:
+
+```
+%{DATA:name}   %{GREEDYDATA:name}   %{WORD:name}   %{INT:name}   %{NOTSPACE:name}
+```
+
+A filter is `{ if: <condition>, grok: { <source>: <pattern> } }`:
+- **condition** — `'[type] == "<dataset>"'` only (`[type]` is the input's `type`); omit `if` to always run.
+- **source** — `path` (the filename), `message` (the raw line), or a field reference like
+  `[ig][routeId]` (a parsed JSON field).
+- Named captures land in `labels.<name>`.
+
+```yaml
+filters:
+  # route_id from the filename of a text log
+  - if: '[type] == "ig-route"'
+    grok: { path: 'route-%{DATA:route_id}\.log' }
+  # route_id from a JSON field of an audit log (GREEDYDATA = "the whole value")
+  - if: '[type] == "ig-audit"'
+    grok: { '[ig][routeId]': '%{GREEDYDATA:route_id}' }
+```
+
 ## Install
 
 vmctl is a wheel that installs into a plain `venv` with `pip` — no `uv` at runtime.
@@ -95,8 +148,9 @@ pip download -r requirements.txt vmctl-0.1.0-py3-none-any.whl -d bundle/
 
 ## Status
 
-M01–M09 shipped: config + SSH transport, ECS framing, and the four subcommands
-above, verified against a two-host lab. See:
+Through M11: config + SSH transport, ECS framing, the four subcommands above, minimal-by-default
+parsing, and a validated general-purpose lab (ForgeRock IG **and** an AM site + replicated DS).
+See:
 
 - [`docs/architecture.md`](docs/architecture.md) — system shape and constraints
 - [`docs/adr/`](docs/adr/) — decision records

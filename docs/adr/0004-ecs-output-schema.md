@@ -84,6 +84,12 @@ Example — a `route-log` (text) record:
 
 ### Amended 2026-07-23 — `message` XOR `event.original`, never both
 
+> **Superseded 2026-07-24 by [ADR 0010](./0010-minimal-default-parsing.md):** `message` now
+> *always* carries the raw line (for parsed and unparsed records), and `event.original` is
+> removed. The size analysis below still holds — the raw line is stored once, in `message`. The
+> "match Logstash's rename to event.original" reasoning is deliberately dropped in favour of
+> "the raw line is always in one predictable place."
+
 **Supersedes the `message` and `event.original` rows of the decision table above.**
 
 The table mandated *both* `message` (the raw line) and `event.original` (an untouched copy of the same raw line). Both worked examples in this ADR show only `message` and no `event.original` — the table and the examples contradicted each other, and the implementation followed the table. The result was that a parsed audit record stored its raw line **three times**: escaped in `message`, escaped again in `event.original`, and a third time as the merged top-level fields — an event **3.9× the size of the line it describes**, measured on a real record.

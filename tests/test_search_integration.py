@@ -81,7 +81,7 @@ def _identity(event: dict[str, Any]) -> tuple[str, str, str]:
     return (
         event["host"]["name"],
         event["log"]["file"]["path"],
-        event.get("event", {}).get("original", ""),
+        event.get("message", ""),  # raw line — always present (ADR 0010)
     )
 
 

@@ -1,4 +1,4 @@
-"""Tests for the ECS envelope builder (put fields only; parse/merge is track C)."""
+"""Tests for the ECS envelope builder + parse step (docs/adr/0004, docs/adr/0010)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from vmctl import __version__
 from vmctl.codecs import Frame
-from vmctl.config import Filter
+from vmctl.config import Filter, TimestampSpec
 from vmctl.event import (
     ECS_VERSION,
     JSON_PARSE_FAILURE,
@@ -50,11 +50,12 @@ def test_message_equals_raw_including_multiline() -> None:
         Frame(raw=raw), host="ig2", profile="p", dataset="ig-system", file_path="/x.log", now=NOW
     )
     assert event["message"] == raw
-    assert "original" not in event["event"]  # text record: message only
+    assert "original" not in event["event"]  # event.original is gone (ADR 0010)
 
 
-def test_parsed_record_uses_event_original_not_message() -> None:
-    """ADR 0004 amendment: the raw line has exactly one home, never both."""
+def test_parsed_record_keeps_raw_in_message() -> None:
+    """ADR 0010: the whole raw line is always in `message`, even for a parsed record;
+    `event.original` no longer exists."""
     raw = '{"a":1}'
     event = build_event(
         Frame(raw=raw, parsed={"a": 1}),
@@ -64,8 +65,15 @@ def test_parsed_record_uses_event_original_not_message() -> None:
         file_path="/a.json",
         now=NOW,
     )
-    assert event["event"]["original"] == raw
-    assert "message" not in event
+    assert event["message"] == raw
+    assert "original" not in event["event"]
+
+
+def test_merged_message_key_does_not_clobber_raw() -> None:
+    """A JSON record whose content has its own `message` must not overwrite the raw line."""
+    frame = Frame(raw='{"message":"inner"}', parsed={"message": "inner"})
+    event = enrich(_put_event(frame), frame, filters=[], file_path="/a.json")
+    assert event["message"] == '{"message":"inner"}'  # raw wins; `message` is reserved
 
 
 def test_tags_emitted_and_json_failure_tagged() -> None:
@@ -112,35 +120,66 @@ def test_enrich_merges_json_and_protects_envelope() -> None:
     assert event["host"] == {"name": "ig1"}  # envelope host wins over merged json
 
 
-def test_enrich_timestamp_from_json_field() -> None:
-    parsed = {"timestamp": "2026-07-23T00:04:54.741Z", "ig": {"routeId": "00-proxy"}}
+def test_enrich_timestamp_default_from_json_field() -> None:
+    # No per-input config: the default auto-detect uses a `timestamp` JSON field.
+    parsed = {"timestamp": "2026-07-23T00:04:54.741Z"}
     frame = Frame(raw="{}", parsed=parsed)
     event = enrich(_put_event(frame), frame, filters=[], file_path="/a.json")
     assert event["@timestamp"].startswith("2026-07-23T00:04:54.741")
     assert event["@timestamp"] != NOW.isoformat()  # log time, not collection time
-    assert event["labels"]["route_id"] == "00-proxy"  # ig.routeId mirrored
 
 
-def test_enrich_timestamp_from_text_message() -> None:
+def test_enrich_timestamp_default_from_text_message() -> None:
     frame = Frame(raw="2026-07-23T00:04:42,571Z | INFO | ... @00-proxy | hi")  # comma millis
-    event = enrich(
-        _put_event(frame, dataset="ig-system", file_path="/route-system.log"),
-        frame,
-        filters=[],
-        file_path="/route-system.log",
-    )
+    event = enrich(_put_event(frame, dataset="ig-system"), frame, filters=[], file_path="/x.log")
     assert event["@timestamp"].startswith("2026-07-23T00:04:42.571")
 
 
-def test_raw_line_reads_either_home() -> None:
+def test_no_route_id_without_a_filter() -> None:
+    """ADR 0010: nothing is parsed from content by default. A parsed `ig.routeId` yields
+    NO label unless a profile filter declares it."""
+    frame = Frame(raw="{}", parsed={"ig": {"routeId": "00-proxy"}})
+    event = enrich(_put_event(frame), frame, filters=[], file_path="/a.json")
+    assert "route_id" not in event.get("labels", {})
+    assert event["ig"]["routeId"] == "00-proxy"  # still present as a merged field
+
+
+def test_timestamp_spec_field() -> None:
+    frame = Frame(raw="{}", parsed={"ts": "2026-07-23T09:00:00Z", "timestamp": "ignore-me"})
+    event = enrich(
+        _put_event(frame), frame, filters=[], file_path="/a.json",
+        timestamp=TimestampSpec(field="ts"),
+    )
+    assert event["@timestamp"].startswith("2026-07-23T09:00:00")
+
+
+def test_timestamp_spec_pattern_format() -> None:
+    # A text log whose event time is NOT a leading ISO token (DS-errors shape).
+    raw = "[24/Jul/2026:00:14:45 +0000] category=JVM severity=NOTICE msg=up"
+    frame = Frame(raw=raw)
+    event = enrich(
+        _put_event(frame, dataset="ds-errors"), frame, filters=[], file_path="/errors",
+        timestamp=TimestampSpec(pattern=r"\[([^\]]+)\]", format="%d/%b/%Y:%H:%M:%S %z"),
+    )
+    assert event["@timestamp"].startswith("2026-07-24T00:14:45")
+
+
+def test_timestamp_miss_falls_back_to_read_time() -> None:
+    # A line with no parseable timestamp keeps the collection time (event.created).
+    frame = Frame(raw="no timestamp here")
+    event = enrich(_put_event(frame), frame, filters=[], file_path="/x")
+    assert event["@timestamp"] == NOW.isoformat()
+    assert event["@timestamp"] == event["event"]["created"]
+
+
+def test_raw_line_reads_message() -> None:
     assert raw_line({"message": "text line"}) == "text line"
-    assert raw_line({"event": {"original": '{"a":1}'}}) == '{"a":1}'
     assert raw_line({}) == ""
 
 
 def test_enrich_timestamp_from_parsed_records_raw_line() -> None:
-    """A parsed record with no `timestamp` field still gets its time from the raw
-    line — which now lives in event.original rather than message."""
+    """A parsed record with no `timestamp` field still gets its time from the raw line
+    (now always in `message`)."""
     frame = Frame(raw="2026-07-23T00:04:42,571Z {...}", parsed={"level": "INFO"})
     event = enrich(_put_event(frame), frame, filters=[], file_path="/a.json")
     assert event["@timestamp"].startswith("2026-07-23T00:04:42.571")

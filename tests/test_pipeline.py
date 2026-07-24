@@ -48,12 +48,11 @@ def test_audit_shape() -> None:
     assert e["event"]["dataset"] == "ig-audit"
     assert e["host"]["name"] == "ig1"
     assert e["@timestamp"].startswith("2026-07-23T00:04")  # parsed from the json timestamp field
-    assert e["labels"]["route_id"] == "00-proxy"  # mirrored from ig.routeId
+    assert e["labels"]["route_id"] == "00-proxy"  # from the ig-audit [ig][routeId] filter
     assert "transactionId" in e  # merged json field
-    # Parsed record: the raw line lives in event.original, and there is no `message`
-    # duplicating it (ADR 0004 amendment).
-    assert e["event"]["original"].startswith("{")
-    assert "message" not in e
+    # ADR 0010: the raw line is always in `message` (parsed record too); no event.original.
+    assert e["message"].startswith("{")
+    assert "original" not in e["event"]
 
 
 def test_route_capture_shape() -> None:
