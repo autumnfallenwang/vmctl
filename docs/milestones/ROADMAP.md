@@ -16,6 +16,8 @@ and the dependency order.
 | [0006](../adr/0006-runtime-transport-asyncssh.md) | `asyncssh` transport, async core, `pyyaml` config, `argparse` CLI |
 | [0007](../adr/0007-machine-only-interface.md) | Machine-only: Query DSL (JSON) is the sole input, NDJSON the sole output |
 | [0008](../adr/0008-field-discovery.md) | `vmctl fields` — schema discovery in `_field_caps` shape (observed, not declared) |
+| [0009](../adr/0009-am-to-the-test-lab.md) | Add ForgeRock AM to the lab — validate general-purpose via a profile-only change |
+| [0010](../adr/0010-minimal-default-parsing.md) | Minimal-by-default parsing: raw always in `message`, `@timestamp` the only default parse, rest declared |
 
 ## Milestone index
 
@@ -27,9 +29,11 @@ and the dependency order.
 | [M04](04-tail-command.md) | `tail` command | Live merged stream across hosts | 0005 | planned |
 | [M05](05-search-command.md) | `search` command | KQL + three-tier pushdown, no store | 0005 | planned |
 | [M06](06-packaging-and-deploy.md) | Packaging & deploy | Wheel, pip/venv, 0.1.0, release CI | 0001 | ✅ done |
-| [M07](07-resumable-offset-registry.md) | Offset registry | Resumable exactly-once (optional) | 0005 | planned (stretch) |
+| [M07](07-resumable-offset-registry.md) | Offset registry | Resumable exactly-once (optional) | 0005 | ⊘ skipped |
 | [M08](08-dsl-query-interface.md) | Machine-only interface | Query DSL in, NDJSON out | 0007 | ✅ done |
 | [M09](09-field-discovery.md) | Field discovery | `vmctl fields` — what is queryable | 0008 | ✅ done |
+| [M10](10-am-support.md) | AM support | Validate general-purpose: AM logs via a profile-only change | 0009 | ▶ active |
+| [M11](11-minimal-default-parsing.md) | Minimal-default parsing | Raw always in message, @timestamp the only default parse | 0010 | planned |
 
 M08 ran ahead of M06/M07 (both unstarted), and M09 follows it; they keep the existing
 numbering so committed cross-references stay valid.

@@ -35,8 +35,9 @@ Vagrant.configure("2") do |config|
 
       node.vm.provider :libvirt do |lv|
         lv.default_prefix = "vmctl"   # domains become vmctl_ig1 / vmctl_ig2
-        lv.memory = 2048
-        lv.cpus = 2
+        # 6 GB holds IG (-Xmx768m) + AM (-Xmx2g) + DS + OS on one host (docs/milestones/10).
+        lv.memory = 6144
+        lv.cpus = 4
       end
 
       # Create the vmctl test login + enable password SSH (vmctl's real auth path).

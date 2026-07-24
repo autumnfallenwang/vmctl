@@ -51,7 +51,68 @@ profiles:
         codec: json
 
     filters:
-      # route_id for route logs is captured from the file path into labels.route_id
-      # (audit already carries ig.routeId, which vmctl mirrors to labels.route_id).
+      # labels.route_id is declared, not automatic (docs/adr/0010): route logs capture it
+      # from the filename; audit captures it from the ig.routeId JSON field via a grok on
+      # that field reference. Nothing is mirrored by default anymore.
       - if: '[type] == "ig-route"'
         grok: { path: 'route-%{DATA:route_id}\.log' }
+      - if: '[type] == "ig-audit"'
+        grok: { '[ig][routeId]': '%{GREEDYDATA:route_id}' }
+
+  # ForgeRock AM site (2 servers) + replicated DS, on the same two hosts — proves vmctl is
+  # general-purpose, not IG-specific (docs/adr/0009, docs/milestones/10). Every log below is
+  # collected with NO source change: AM/DS Common Audit are the same JSON as IG's audit; the
+  # debug/error/container logs are multiline text. base_dir is the home dir so one profile
+  # spans AM (~/openam), DS (~/am-stack/opendj), and Tomcat (~/am-stack/tomcat).
+  # Generate the events with testenv/engine/am-drive.sh <am-fqdn> <amadmin-pw>.
+  test_am:
+    hosts:
+      - host: 192.168.77.11
+        user: vmctl
+        # password: your-password-here
+      - host: 192.168.77.12
+        user: vmctl
+        # password: your-password-here
+    base_dir: /home/vmctl
+    inputs:
+      # AM Common Audit — 4 topics (access/activity/authentication/config), one JSON per line.
+      - type: am-audit
+        path: ["openam/var/audit/*.audit.json*"]
+        mode: tail
+        codec: json
+      # DS Common Audit — every LDAP op AM makes (eventName DJ-LDAP), same JSON shape.
+      - type: ds-audit
+        path: ["am-stack/opendj/logs/ldap-access.audit.json*"]
+        mode: tail
+        codec: json
+      # AM debug (logback) — multiline text, lines lead with HH:MM:SS.mmm (no date).
+      - type: am-debug
+        path: ["openam/var/debug/*"]
+        mode: tail
+        codec:
+          multiline:
+            pattern: '^\d{2}:\d{2}:\d{2}'
+            negate: true
+            what: previous
+      # AM/Tomcat container log — same logback text format.
+      - type: am-container
+        path: ["am-stack/tomcat/logs/catalina.out"]
+        mode: tail
+        codec:
+          multiline:
+            pattern: '^\d{2}:\d{2}:\d{2}'
+            negate: true
+            what: previous
+      # DS diagnostic log — multiline text, lines lead with [dd/Mon/yyyy:HH:MM:SS +zzzz].
+      # Not a leading ISO token, so declare where @timestamp comes from (docs/adr/0010).
+      - type: ds-errors
+        path: ["am-stack/opendj/logs/errors*"]
+        mode: tail
+        codec:
+          multiline:
+            pattern: '^\['
+            negate: true
+            what: previous
+        timestamp:
+          pattern: '\[([^\]]+)\]'
+          format: '%d/%b/%Y:%H:%M:%S %z'
